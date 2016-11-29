@@ -10,12 +10,12 @@ import numpy as np
 from utils_preprocessing import date_format, date_to_str , fill_holidays
 from challenge_constants import *
 #%%
-display(pd.read_csv("train_2011_2012_2013.csv", nrows=50,sep=';').head())
-display(pd.read_csv("train_2011_2012_2013.csv", nrows=50,sep=';').tail())
-df=pd.read_csv("train_2011_2012_2013.csv", nrows=50,sep=';')
+display(pd.read_csv("data/train_2011_2012_2013.csv", nrows=50,sep=';').head())
+display(pd.read_csv("data/train_2011_2012_2013.csv", nrows=50,sep=';').tail())
+df=pd.read_csv("data/train_2011_2012_2013.csv", nrows=50,sep=';')
 #%%
 '''
-df=pd.read_csv("train_2011_2012_2013.csv",sep=';')
+df=pd.read_csv("data/train_2011_2012_2013.csv",sep=';')
 print(len(df))
 pd.Series.unique(df['ASS_COMENT'])
 '''
