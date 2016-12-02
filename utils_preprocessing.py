@@ -27,14 +27,14 @@ def as_date(s, date_format):
 def date_to_str(bigTable, col_names_date_format):
     for column in col_names_date_format:
         bigTable[column] = bigTable[column].astype(str).apply(lambda x: ''.join((x.split('.')[: -1])))
-        print(bigTable[column])
     return bigTable
+
 
 def date_to_str_2(bigTable, col_names_date_format):
     for column in col_names_date_format:
         bigTable[column] = bigTable[column].astype(str).apply(lambda x: ''.join((x.split('.'))))
-        print(bigTable[column])
     return bigTable
+
 
 def fill_holidays(table, holiday_column='DAY_OFF', date_column='DATE', holiday= holidays):
     table[holiday_column]=table[date_column].apply(lambda x : str(x.date()) in holiday).astype(int)
