@@ -16,6 +16,8 @@ from statsmodels.tsa.stattools import pacf
 from statsmodels.tsa.seasonal import seasonal_decompose
 from matplotlib.dates import MonthLocator
 from os import path
+import unicodedata
+import datetime
 #plt.rcParams['agg.path.chunksize'] = 20000
 # %% Read Data
 
@@ -72,11 +74,31 @@ for assign in no_duplicates.keys():
     no_duplicates[assign].set_index(['index'], inplace=True)
     no_duplicates[assign].index.name = None
 
+# %% Handling missing time stamps 
+
+start = df.DATE.min()
+end = df.DATE.max()
+
+def date_range(start, end):
+    all_dates = [start]
+    curr = start
+    while curr != end:
+        curr += datetime.timedelta(minutes=30)
+        all_dates.append(curr)
+    return all_dates
+    
+full_date_range = date_range(start, end)
+full_date_df = pd.Series(data=full_date_range, index=full_date_range)
+
+for assign in no_duplicates.keys():
+    no_duplicates[assign] = pd.concat([no_duplicates[assign], full_date_df], axis=1)[['DATE', 'CSPL_RECEIVED_CALLS']]
+    no_duplicates[assign].CSPL_RECEIVED_CALLS.fillna(0, inplace=True)
 # %% function for plotting the received calls for each timestamp
 
 def plot_calls(x, y, assign):
-    
-    title = 'Received Calls -- '+ assign.encode(encoding='UTF-8', errors='strict').decode('UTF-8')
+    # unicode string to remove accents
+    assign_uni = unicodedata.normalize('NFD', assign).encode('ascii', 'ignore').decode()
+    title = 'Received Calls -- '+ assign_uni
     file = path.join('figures', title+'.png')
 
     fig, ax = plt.subplots(figsize=(12,8))
@@ -95,10 +117,28 @@ def plot_calls(x, y, assign):
 for assign in no_duplicates.keys(): 
     plot_calls(no_duplicates[assign].index, no_duplicates[assign].CSPL_RECEIVED_CALLS, assign)
     
-# %%
+# %% function to plot the time series decomposition
 
-decomposition = seasonal_decompose(ts.CSPL_RECEIVED_CALLS, freq=12)  
-fig = plt.figure()  
-fig = decomposition.plot()  
-fig.set_size_inches(15, 8)
-plt.show()
+def plot_decomposition(assign, freq=("weekly", 48*7)):
+    assign_uni = unicodedata.normalize('NFD', assign).encode('ascii', 'ignore').decode()
+    title = 'Decomposition -- '+ assign_uni+ ' -- freq '+ freq[0]
+    file = path.join('figures', title+'.png')
+    
+    fig= plt.figure()
+    decomposition = seasonal_decompose(no_duplicates[assign].CSPL_RECEIVED_CALLS.values, freq=freq[1])  
+    fig = decomposition.plot()
+    fig.autofmt_xdate()
+    # For tickmarks and ticklabels every month
+    #plt.xticks.set_major_locator(MonthLocator(interval=2))
+    fig.set_size_inches(15, 8)
+    plt.suptitle(title)
+    plt.savefig(file, bbox_inches='tight')
+    plt.show()
+
+# %% decomposition for each assignment for a weekly and monthy frequency
+for assign in no_duplicates.keys(): 
+    plot_decomposition(assign, ("weekly", 48*7))
+    plot_decomposition(assign, ("monthly", 24*60))
+
+# %%
+ 
