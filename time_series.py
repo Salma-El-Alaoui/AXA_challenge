@@ -20,6 +20,12 @@ import unicodedata
 import datetime
 import random
 #plt.rcParams['agg.path.chunksize'] = 20000
+
+# %% Behavior variables (to avoid ugly comments inside the body)
+
+plots_trend = False
+plots_decomp = False
+
 # %% Read Data
 
 df = pd.read_csv("data/train_2011_2012_2013.csv", sep=';')
@@ -110,12 +116,6 @@ def plot_calls(x, y, assign):
     plt.savefig(file, bbox_inches='tight')
     plt.show()
     
-
-# %% plot received calls for each assignment
-
-#for assign in no_duplicates.keys(): 
-    #plot_calls(no_duplicates[assign].index, no_duplicates[assign].CSPL_RECEIVED_CALLS, assign)
-    
 # %% function to plot the time series decomposition
 
 def plot_decomposition(assign, freq=("weekly", 48*7)):
@@ -134,11 +134,18 @@ def plot_decomposition(assign, freq=("weekly", 48*7)):
     plt.savefig(file, bbox_inches='tight')
     plt.show()
 
-# %% decomposition for each assignment for a weekly and monthy frequency
-#for assign in no_duplicates.keys(): 
-    #plot_decomposition(assign, ("weekly", 48*7))
-    #plot_decomposition(assign, ("monthly", 24*60))
+# %% plot received calls for each assignment
 
+if plots_trend:
+    for assign in no_duplicates.keys(): 
+        plot_calls(no_duplicates[assign].index, no_duplicates[assign].CSPL_RECEIVED_CALLS, assign)
+    
+# %% decomposition for each assignment for a weekly and monthy frequency
+
+if plots_decomp:
+    for assign in no_duplicates.keys(): 
+        plot_decomposition(assign, ("weekly", 48*7))
+        plot_decomposition(assign, ("monthly", 24*60))
 
 # %% Function to create a training and test set for a given week begining by first_day_week
 
