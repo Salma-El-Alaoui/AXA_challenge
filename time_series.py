@@ -18,6 +18,7 @@ from matplotlib.dates import MonthLocator
 from os import path
 import unicodedata
 import datetime
+import random
 #plt.rcParams['agg.path.chunksize'] = 20000
 # %% Read Data
 
@@ -76,9 +77,6 @@ for assign in no_duplicates.keys():
 
 # %% Handling missing time stamps 
 
-start = df.DATE.min()
-end = df.DATE.max()
-
 def date_range(start, end):
     all_dates = [start]
     curr = start
@@ -87,12 +85,13 @@ def date_range(start, end):
         all_dates.append(curr)
     return all_dates
     
-full_date_range = date_range(start, end)
+full_date_range = date_range(df.DATE.min(), df.DATE.max())
 full_date_df = pd.Series(data=full_date_range, index=full_date_range)
 
 for assign in no_duplicates.keys():
     no_duplicates[assign] = pd.concat([no_duplicates[assign], full_date_df], axis=1)[['DATE', 'CSPL_RECEIVED_CALLS']]
     no_duplicates[assign].CSPL_RECEIVED_CALLS.fillna(0, inplace=True)
+    
 # %% function for plotting the received calls for each timestamp
 
 def plot_calls(x, y, assign):
@@ -140,24 +139,19 @@ def plot_decomposition(assign, freq=("weekly", 48*7)):
     #plot_decomposition(assign, ("weekly", 48*7))
     #plot_decomposition(assign, ("monthly", 24*60))
 
-# %%
 
-#first_day_week = datetime.datetime.strptime('2012-12-28 00:00:00', '%Y-%m-%d %H:%M:%S')
-
-# %% function to create a training and test set for a given week begining by first_day_week
+# %% Function to create a training and test set for a given week begining by first_day_week
 
 def get_train_test(first_day_week, data):
     last_day_week = first_day_week + datetime.timedelta(days=6, hours=23, minutes=30)
-    test_set = data[first_day_week: last_day_week]
+    test_set = data[first_day_week: last_day_week].copy()
     # small fix 
-    test_set.loc[test_set.DATE.isnull(), 'DATE']= test_set[test_set.DATE.isnull()].index
+    test_set.loc[test_set.DATE.isnull(), 'DATE'] = test_set[test_set.DATE.isnull()].index
     # the training set are all the dates prior to the the first date of the week
-    train_set = data[:first_day_week - datetime.timedelta(minutes=30)]
-    return train_set, test_set
+    train_set = data[:first_day_week - datetime.timedelta(minutes=30)].copy()
+    return (train_set, test_set)
     
 # %% Now let's construct a training set for the submission data
-
-# TODO: (refactoring) create a function which handles both submission data and tests for validation, because it's the same logic
 
 sub_data = get_submission_data()
 
@@ -171,19 +165,44 @@ for a in sub_assignments:
 
 # structure : dict(key = (assignment, first day of week in submission data), value=(train, submission data))
 # could also be used for model validation
-sub_train = dict()
+sub_train_dfs = dict()
 for a in sub_assignments:
     for first_day in sub_dates[a]:
         first_day_dt = datetime.datetime.combine(first_day, datetime.time(00, 00, 00))
-        sub_train[(a, first_day_dt)] =  get_train_test(first_day_dt, no_duplicates[a])
+        sub_train_dfs[(a, first_day_dt)] =  get_train_test(first_day_dt, no_duplicates[a])
 
 # example: 
-train_example = sub_train[('Téléphonie', datetime.datetime(2013, 12, 22, 0, 0))][0]
-test_example = sub_train[('Téléphonie', datetime.datetime(2013, 12, 22, 0, 0))][1]
+train_example = sub_train_dfs[('Téléphonie', datetime.datetime(2013, 12, 22, 0, 0))][0]
+test_example = sub_train_dfs[('Téléphonie', datetime.datetime(2013, 12, 22, 0, 0))][1]
           
-# TODO: a function which fills the predictions in the no_duplicates_dfs when they happen before the week we are currently 
+# TODO: a function which fills the predictions in the "sub_train_dfs" when they happen before the week we are currently 
 # predicting. In the current state of things, the training set will contain (nb calls = 0). If we make 
 # predictions in an iterative fashion it shouldn't be too hard.
 
 # TODO: (refactoring) rename no_duplicates
+
+# %% Create a test set for local validation: for each assignement. 
+
+# this function returns a dict(key = assign, value = list( train, test for 12 weeks, one for each month ) )
+def get_test_set(first_date):
+    months_start = [first_date] + [first_date + datetime.timedelta(days=30 * i) for i in range(1, 12)]
+    train_dict = {assign: list() for assign in no_duplicates.keys()}
+    for assign in train_dict.keys():
+        for date in months_start:
+            train_dict[assign].append(get_train_test(date, no_duplicates[assign]))
+    return train_dict
+
+# Generate a date randomly in the first 2 weeks of January 2012   
+def generate_random_date():
+    start_date = datetime.date(2012, 1, 1).toordinal()
+    end_date = datetime.date(2012, 1, 15).toordinal()
+    random_date = datetime.date.fromordinal(random.randint(start_date, end_date))
+    return datetime.datetime.combine(random_date, datetime.time(00, 00, 00))
+           
+
+val_train_dfs = get_test_set(generate_random_date())    
+
+# TODO : function for fancy scoring: score per assignment, and per day of the week/ month etc
+        
+# %%
 
