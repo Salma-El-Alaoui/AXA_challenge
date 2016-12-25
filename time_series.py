@@ -14,6 +14,8 @@ import statsmodels.api as sm
 from statsmodels.tsa.stattools import acf  
 from statsmodels.tsa.stattools import pacf
 from statsmodels.tsa.seasonal import seasonal_decompose
+from statsmodels.tsa.arima_model import ARIMA
+from statsmodels.tsa.statespace.sarimax import SARIMAX
 from matplotlib.dates import MonthLocator
 from os import path
 import unicodedata
@@ -158,6 +160,7 @@ def get_train_test(first_day_week, data):
     train_set = data[:first_day_week - datetime.timedelta(minutes=30)].copy()
     return (train_set, test_set)
     
+    
 # %% Now let's construct a training set for the submission data
 
 sub_data = get_submission_data()
@@ -188,6 +191,35 @@ test_example = sub_train_dfs[('Téléphonie', datetime.datetime(2013, 12, 22, 0,
 
 # TODO: (refactoring) rename no_duplicates
 
+# %% Training and testing using seasonal ARIMA
+"""
+for each assignment:
+  for each sub_date:
+	split df_train into train test
+	train model
+	predict
+	write prediction to df_test (with a function to be written)
+	write prediction to df_train (with a function to be written)
+ """
+
+for assignment in sub_assignments:
+    for first_day in sub_dates[assignment]:
+        print(assignment)
+        first_day_dt = datetime.datetime.combine(first_day, datetime.time(00, 00, 00))
+        train_set, test_set = sub_train_dfs[(assignment,first_day_dt)]
+        n_train = len(train_set)
+        n_test = len(test_set)
+        test_set.CSPL_RECEIVED_CALLS = test_set.CSPL_RECEIVED_CALLS.apply(lambda x: np.nan)
+        train_test = train_set.append(test_set)
+        train_test[['CSPL_RECEIVED_CALLS']].tail(4*n_test).plot(figsize=(12, 8)) 
+        mod = SARIMAX(train_test.CSPL_RECEIVED_CALLS, trend='n', order=(1,1,1), seasonal_order=(1,1,1,1))
+        model = mod.fit() 
+        
+        #print(mod.score())
+        train_test['FORECAST'] = model.predict(start=n_train-3*n_test,end=(n_train + n_test),dynamic=True)
+        train_test[['FORECAST']].tail(4*n_test).plot(figsize=(12, 8)) 
+        
+        
 # %% Create a test set for local validation: for each assignement. 
 
 # this function returns a dict(key = assign, value = list( train, test for 12 weeks, one for each month ) )
