@@ -16,6 +16,7 @@ from statsmodels.tsa.stattools import pacf
 from statsmodels.tsa.seasonal import seasonal_decompose
 from statsmodels.tsa.arima_model import ARIMA
 from statsmodels.tsa.statespace.sarimax import SARIMAX
+from statsmodels.tsa.x13 import x13_arima_select_order
 from matplotlib.dates import MonthLocator
 from os import path
 import unicodedata
@@ -158,6 +159,7 @@ def get_train_test(first_day_week, data):
     test_set.loc[test_set.DATE.isnull(), 'DATE'] = test_set[test_set.DATE.isnull()].index
     # the training set are all the dates prior to the the first date of the week
     train_set = data[:first_day_week - datetime.timedelta(minutes=30)].copy()
+    train_set.loc[train_set.DATE.isnull(), 'DATE'] = train_set[train_set.DATE.isnull()].index
     return (train_set, test_set)
     
     
@@ -165,32 +167,26 @@ def get_train_test(first_day_week, data):
 
 sub_data = get_submission_data()
 
-# The key is the assignment (in the submission data), and the value is the list of of the first day of every week for this
-# assignment
-sub_dates = dict()
+# assignments present in the submission data
 sub_assignments = pd.unique(sub_data.ASS_ASSIGNMENT)
-for a in sub_assignments:
-    sub_df_assign = sub_data[sub_data.ASS_ASSIGNMENT == a].copy()
-    sub_dates[a] = list(sub_df_assign.DATE_FORMAT.apply(lambda x: x.date()).unique())[0::7]
+# first day of each week in the submission data
+sub_first_days = list(sub_data.DATE_FORMAT.apply(lambda x: x.date()).unique())[0::7]
 
-# structure : dict(key = (assignment, first day of week in submission data), value=(train, submission data))
-# could also be used for model validation
-sub_train_dfs = dict()
+# structure : dict(key = (assignment), value=list(first_day of the week, (train, submission data)))
+sub_train_dfs = {assign: list() for assign in sub_assignments }
 for a in sub_assignments:
-    for first_day in sub_dates[a]:
+    for first_day in sub_first_days:
         first_day_dt = datetime.datetime.combine(first_day, datetime.time(00, 00, 00))
-        sub_train_dfs[(a, first_day_dt)] =  get_train_test(first_day_dt, no_duplicates[a])
+        sub_train_dfs[a].append((first_day_dt, get_train_test(first_day_dt, no_duplicates[a])))
 
 # example: 
-train_example = sub_train_dfs[('Téléphonie', datetime.datetime(2013, 12, 22, 0, 0))][0]
-test_example = sub_train_dfs[('Téléphonie', datetime.datetime(2013, 12, 22, 0, 0))][1]
+train_example = sub_train_dfs['Téléphonie']
           
 # TODO: a function which fills the predictions in the "sub_train_dfs" when they happen before the week we are currently 
 # predicting. In the current state of things, the training set will contain (nb calls = 0). If we make 
 # predictions in an iterative fashion it shouldn't be too hard.
 
 # TODO: (refactoring) rename no_duplicates
-
 # %% Training and testing using seasonal ARIMA
 """
 for each assignment:
@@ -202,22 +198,22 @@ for each assignment:
 	write prediction to df_train (with a function to be written)
  """
 
-for assignment in sub_assignments:
-    for first_day in sub_dates[assignment]:
-        print(assignment)
-        first_day_dt = datetime.datetime.combine(first_day, datetime.time(00, 00, 00))
-        train_set, test_set = sub_train_dfs[(assignment,first_day_dt)]
-        n_train = len(train_set)
-        n_test = len(test_set)
-        test_set.CSPL_RECEIVED_CALLS = test_set.CSPL_RECEIVED_CALLS.apply(lambda x: np.nan)
-        train_test = train_set.append(test_set)
-        train_test[['CSPL_RECEIVED_CALLS']].tail(4*n_test).plot(figsize=(12, 8)) 
-        mod = SARIMAX(train_test.CSPL_RECEIVED_CALLS, trend='n', order=(1,1,1), seasonal_order=(1,1,1,1))
-        model = mod.fit() 
-        
+for assignment in [sub_assignments[0]]:
+    print("Model for assignment: " + assignment)
+    for i, (first_day, (train_set, test_set)) in enumerate(sub_train_dfs[assignment]):
+        if i != 0:
+            break
+        print("Week starting with: ", first_day)
+        #train_test = train_set.append(test_set)
+        #train_test[['CSPL_RECEIVED_CALLS']].tail(4*n_test).plot(figsize=(12, 8)) 
+        res = x13_arima_select_order(train_set)
+        print(res)
+        model = SARIMAX(train_set.CSPL_RECEIVED_CALLS, trend='n', order=(1,1,1), seasonal_order=(1,1,1,1))
+        results = model.fit() 
+        print(results.summary())
         #print(mod.score())
-        train_test['FORECAST'] = model.predict(start=n_train-3*n_test,end=(n_train + n_test),dynamic=True)
-        train_test[['FORECAST']].tail(4*n_test).plot(figsize=(12, 8)) 
+        #train_test['FORECAST'] = model.predict(start=n_train-3*n_test,end=(n_train + n_test),dynamic=True)
+        #train_test[['FORECAST']].tail(4*n_test).plot(figsize=(12, 8)) 
         
         
 # %% Create a test set for local validation: for each assignement. 
