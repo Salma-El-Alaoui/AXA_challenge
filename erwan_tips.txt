@@ -1,0 +1,6 @@
+Challenge - idées Le Pennec
+- prédiction bête : bison futé, utiliser prédiction de la semaine dernière lissée (enlever les pics), éventuellement un autre semaine qui ressemble plus, ou une combinaison linéaire de semaines.
+- prédiction avec modèles ARIMA. Mais au lieu de prédire, essayer de prédire les écarts à la moyenne (pour stationariser)
+- sur la prédiction finale, faire du post processing pour améliorer la prédiction. Modèles poissonniens, la variance est en sqrt(prediction)
+    - Du coup, apprendre alpha et beta tel que (1+alpha)prend + beta* sqrt(pred) optimise la fonction de cout. 
+    - Faire ça si possible par CV, mais c’est assez compliqué à mettre en place en temporel (fenêtre glissante ? fenêtre de taille qui augmente ? autre ?)
