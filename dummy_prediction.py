@@ -127,6 +127,8 @@ def get_previous_week_call_nb(day,df_train):
 #                    print("fkzl")
 #                    break
     return previous_day, pred
+    
+
 
 ## check that get_previous_week_call_nb works fine
 assignment_ex = sub_assignments[0]
@@ -137,6 +139,54 @@ print("First date of the submission file is: " + str(date_ex))
 print("Date at day minus seven: " + str(res[0]))
 print("Nb of calls received: " + str(res[1]))
 
+# %% Take max of number of calls at w-1, w-2, w-3 in a window of 1 hour
+
+def get_smoothed_dummy_prediction(day,df_train):
+    day_minus_7 = day - pd.to_timedelta(timedelta(weeks=1))
+    day_minus_14 = day - pd.to_timedelta(timedelta(weeks=2))
+    day_minus_21 = day - pd.to_timedelta(timedelta(weeks=3))
+    day_minus_7_30_bef = day_minus_7 - pd.to_timedelta(timedelta(minutes=30))
+    day_minus_14_30_bef = day_minus_14 - pd.to_timedelta(timedelta(minutes=30))
+    day_minus_21_30_bef = day_minus_21 - pd.to_timedelta(timedelta(minutes=30))
+    day_minus_7_60_bef = day_minus_7 - pd.to_timedelta(timedelta(minutes=60))
+    day_minus_14_60_bef = day_minus_14 - pd.to_timedelta(timedelta(minutes=60))
+    day_minus_21_60_bef = day_minus_21 - pd.to_timedelta(timedelta(minutes=60))
+    day_minus_7_30_aft = day_minus_7 + pd.to_timedelta(timedelta(minutes=30))
+    day_minus_14_30_aft = day_minus_14 + pd.to_timedelta(timedelta(minutes=30))
+    day_minus_21_30_aft = day_minus_21 + pd.to_timedelta(timedelta(minutes=30))
+    day_minus_7_60_aft = day_minus_7 + pd.to_timedelta(timedelta(minutes=60))
+    day_minus_14_60_aft = day_minus_14 + pd.to_timedelta(timedelta(minutes=60))
+    day_minus_21_60_aft = day_minus_21 + pd.to_timedelta(timedelta(minutes=60))
+    dates = []
+    dates.append(day_minus_7)
+    dates.append(day_minus_14)
+    dates.append(day_minus_21)
+    dates.append(day_minus_7_30_bef)
+    dates.append(day_minus_14_30_bef)
+    dates.append(day_minus_21_30_bef)
+    dates.append(day_minus_7_30_aft)
+    dates.append(day_minus_14_30_aft)
+    dates.append(day_minus_21_30_aft)
+    dates.append(day_minus_7_60_bef)
+    dates.append(day_minus_14_60_bef)
+    dates.append(day_minus_21_60_bef)
+    dates.append(day_minus_7_60_aft)
+    dates.append(day_minus_14_60_aft)
+    dates.append(day_minus_21_60_aft)
+    
+    preds = []
+    for date in dates:
+        try:
+            pred = df_train.loc[(df_train["DATE"] == date)]["CSPL_RECEIVED_CALLS"][0]
+        except IndexError:
+            pred = 0
+        preds.append(pred)
+    return np.max(preds)
+        
+assignment_ex = sub_assignments[0]
+date_ex = sub_first_days[0]
+date_ex = datetime.datetime.combine(date_ex, datetime.time(00, 00, 00))
+print(get_smoothed_dummy_prediction(date_ex,no_duplicates[assignment_ex]))
 # %% debug
 #bugged_date = date_ex + pd.to_timedelta(timedelta(weeks=5,days=1)) 
 #day_minus_7 = bugged_date - pd.to_timedelta(timedelta(weeks=1))
@@ -184,13 +234,27 @@ for assignment in sub_assignments:
         y = get_previous_week_call_nb(date,no_duplicates[assignment])[1]
         df_test.loc[(df_test["DATE_FORMAT"] == date) & (df_test["ASS_ASSIGNMENT"] == assignment) , "prediction"] = y
 
+                    
+#%% Predict a smoothed version (look at week -1, week -2, week -3, in a time window of half an hour before, half an hour after)
+
+for assignment in sub_assignments:
+    print("*** assignment " + str(assignment))
+    for date in sub_dates:  
+        y = get_smoothed_dummy_prediction(date,no_duplicates[assignment])
+        df_test.loc[(df_test["DATE_FORMAT"] == date) & (df_test["ASS_ASSIGNMENT"] == assignment) , "prediction"] = y
+
+# %% Write to sumbission file
+
+#d_sub = df_test[['DATE', 'ASS_ASSIGNMENT', 'prediction']]
+#d_sub.to_csv('data/test_submission_bison_fute_1.csv', sep="\t", encoding='utf-8', index=False)
+
+# %% Write to sumbission file
+
+#d_sub_2=d_sub.copy()
+#d_sub_2['prediction'] = 2 * d_sub_2['prediction']
+#d_sub_2.to_csv('data/test_submission_bison_fute_2.csv', sep="\t", encoding='utf-8', index=False)
+
 # %% Write to sumbission file
 
 d_sub = df_test[['DATE', 'ASS_ASSIGNMENT', 'prediction']]
-d_sub.to_csv('data/test_submission_bison_fute_1.csv', sep="\t", encoding='utf-8', index=False)
-
-# %% Write to sumbission file
-
-d_sub_2=d_sub.copy()
-d_sub_2['prediction'] = 2 * d_sub_2['prediction']
-d_sub_2.to_csv('data/test_submission_bison_fute_2.csv', sep="\t", encoding='utf-8', index=False)
+d_sub.to_csv('data/test_submission_dummy_smoothed_max_1.csv', sep="\t", encoding='utf-8', index=False)
