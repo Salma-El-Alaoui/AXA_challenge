@@ -188,3 +188,9 @@ for assignment in sub_assignments:
 
 d_sub = df_test[['DATE', 'ASS_ASSIGNMENT', 'prediction']]
 d_sub.to_csv('data/test_submission_bison_fute_1.csv', sep="\t", encoding='utf-8', index=False)
+
+# %% Write to sumbission file
+
+d_sub_2=d_sub.copy()
+d_sub_2['prediction'] = 2 * d_sub_2['prediction']
+d_sub_2.to_csv('data/test_submission_bison_fute_2.csv', sep="\t", encoding='utf-8', index=False)
