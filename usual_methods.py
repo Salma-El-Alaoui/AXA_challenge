@@ -19,6 +19,7 @@ from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import cross_val_score
+from challenge_constants import *
 from os import path
 import unicodedata
 import datetime
@@ -139,11 +140,16 @@ def fill_inexistant_features(train_features,test_features):
             test_features[str(column)] = np.zeros(n)
     return test_features
     
+def fill_holidays_next(table, holiday_column='DAY_OFF_AFTER', date_column='DATE', holiday= holidays):
+    table[holiday_column]=table[date_column].apply(lambda x : str(x.date()+datetime.timedelta(days=1)) in holiday).astype(int)
+    return table
+
+    
 def extract_features(input_data):
     data = input_data.copy()
     data['YEAR'] = data.DATE.apply(lambda x: x.year) 
     data['MONTH'] = data.DATE.apply(lambda x: x.month) 
-    data_dummy_month = pd.get_dummies(data['MONTH'],prefix='MONTH')
+    #data_dummy_month = pd.get_dummies(data['MONTH'],prefix='MONTH')
     data['DAY'] = data.DATE.apply(lambda x: x.day) 
     data['WEEK_DAY'] = data.DATE.apply(lambda x: x.weekday()) 
     data_dummy_weekday = pd.get_dummies(data['WEEK_DAY'],prefix='WEEKDAY')
@@ -151,13 +157,16 @@ def extract_features(input_data):
     data['MINUTE'] = data.DATE.apply(lambda x: x.minute * 5./300.) # .minute gives 0 or 30,
     #and to have continuous times, we want 30 to becomes half an hour, ie. 0.5
     data['TIME'] = data['HOUR'] + data['MINUTE']
+    data['MINUTE'] = data['MINUTE'].apply(lambda x: x/0.5) # we still want to keep the indication of half hours: if was 0.5, becomes 1; if was 0, stays 0
     data = fill_holidays(data)
+    data = fill_holidays_next(data)
     data.drop('HOUR', axis=1, inplace=True)
-    data.drop('MINUTE', axis=1, inplace=True)
-    data.drop('MONTH', axis=1, inplace=True)
+    #data.drop('MINUTE', axis=1, inplace=True)
+    #data.drop('MONTH', axis=1, inplace=True)
     data.drop('WEEK_DAY', axis=1, inplace=True)
     data.drop('DATE', axis=1, inplace=True)
-    data_with_dummies = data.join(data_dummy_month).join(data_dummy_weekday)
+    #data_with_dummies = data.join(data_dummy_month).join(data_dummy_weekday)
+    data_with_dummies = data.join(data_dummy_weekday)
     return data_with_dummies
 
     
@@ -170,8 +179,9 @@ data_test_ex = sub_data[sub_data.ASS_ASSIGNMENT == 'Japon'].copy()
 train_features = extract_features(data_train_ex)
 train_labels = extract_labels(data_train_ex)
 test_features = extract_features(data_test_ex)
+print(train_features['DAY_OFF'].sum())
+print(train_features['DAY_OFF_AFTER'].sum())
 print(train_features.columns)
-
 #%% Loss function and scoring method
 
 def custom_loss(estimator,x, y):
