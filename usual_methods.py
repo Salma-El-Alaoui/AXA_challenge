@@ -19,6 +19,7 @@ from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import cross_val_score
+from datetime import timedelta
 from challenge_constants import *
 from os import path
 import unicodedata
@@ -224,13 +225,14 @@ print(df_test.head(2))
 df_test.loc[(df_test["DATE_FORMAT"] == one_date) & (df_test["ASS_ASSIGNMENT"] == sub_assignments[0]) , "prediction"] = np.nan
 print(df_test.head(2))
 #%%
-
+scores = dict()
 for assignment in sub_assignments:
     print("***********")
     print("\n Model for assignment " + str(assignment))
     df_assign = no_duplicates[assignment]
     
-    scores = []
+    
+    scores[assignment] = []
     for i, first_day in enumerate(sub_first_days):
         print("** Week starting with " +  str(first_day))
         ## Building train and test sets
@@ -267,26 +269,82 @@ for assignment in sub_assignments:
         train_labels_matrix = train_labels.as_matrix()
         regressor.fit(train_features_matrix,train_labels_matrix)
         ypred = regressor.predict(test_features.as_matrix())
-        
         score = custom_loss(regressor, test_features_loc.as_matrix(), test_labels_loc)
+        #print(test_labels_loc.sum())
+        #print(regressor.predict(test_features_loc.as_matrix()).sum())
         print("Score: ", first_day_test, score)
-        scores.append(score)
+        #scores.append(score)
+        scores[assignment].append(score)
+        #print(scores)
         
         ## Write predictions to dataframe        
         for i, date in enumerate(test_features.index):
             df_test.loc[(df_test["DATE_FORMAT"] == date) & (df_test["ASS_ASSIGNMENT"] == assignment) , "prediction"] = max(ypred[i], 0)
             df_assign.loc[date, 'CSPL_RECEIVED_CALLS'] = max(0, ypred[i])
         
-    print("Mean score for " + assignment, np.mean(scores))
+    #print("Mean score for " + assignment, np.mean(scores[assignment]))
                  
 print(df_test['prediction'])       
 
+# %% Telephonie
 
+def get_smoothed_dummy_prediction(day,df_train):
+    day_minus_7 = day - pd.to_timedelta(timedelta(weeks=1))
+    day_minus_14 = day - pd.to_timedelta(timedelta(weeks=2))
+    day_minus_21 = day - pd.to_timedelta(timedelta(weeks=3))
+    day_minus_7_30_bef = day_minus_7 - pd.to_timedelta(timedelta(minutes=30))
+    day_minus_14_30_bef = day_minus_14 - pd.to_timedelta(timedelta(minutes=30))
+    day_minus_21_30_bef = day_minus_21 - pd.to_timedelta(timedelta(minutes=30))
+    day_minus_7_60_bef = day_minus_7 - pd.to_timedelta(timedelta(minutes=60))
+    day_minus_14_60_bef = day_minus_14 - pd.to_timedelta(timedelta(minutes=60))
+    day_minus_21_60_bef = day_minus_21 - pd.to_timedelta(timedelta(minutes=60))
+    day_minus_7_30_aft = day_minus_7 + pd.to_timedelta(timedelta(minutes=30))
+    day_minus_14_30_aft = day_minus_14 + pd.to_timedelta(timedelta(minutes=30))
+    day_minus_21_30_aft = day_minus_21 + pd.to_timedelta(timedelta(minutes=30))
+    day_minus_7_60_aft = day_minus_7 + pd.to_timedelta(timedelta(minutes=60))
+    day_minus_14_60_aft = day_minus_14 + pd.to_timedelta(timedelta(minutes=60))
+    day_minus_21_60_aft = day_minus_21 + pd.to_timedelta(timedelta(minutes=60))
+    dates = []
+    dates.append(day_minus_7)
+    dates.append(day_minus_14)
+    dates.append(day_minus_21)
+    dates.append(day_minus_7_30_bef)
+    dates.append(day_minus_14_30_bef)
+    dates.append(day_minus_21_30_bef)
+    dates.append(day_minus_7_30_aft)
+    dates.append(day_minus_14_30_aft)
+    dates.append(day_minus_21_30_aft)
+    dates.append(day_minus_7_60_bef)
+    dates.append(day_minus_14_60_bef)
+    dates.append(day_minus_21_60_bef)
+    dates.append(day_minus_7_60_aft)
+    dates.append(day_minus_14_60_aft)
+    dates.append(day_minus_21_60_aft)
+    
+    preds = []
+    for date in dates:
+        try:
+            pred = df_train.loc[(df_train["DATE"] == date)]["CSPL_RECEIVED_CALLS"][0]
+        except IndexError:
+            pred = 0
+        preds.append(pred)
+    return np.max(preds)
+
+#%%
+assignment = "Téléphonie"
+sub_dates = list(sub_data.DATE_FORMAT.apply(lambda x: x).unique())
+
+for date in sub_dates:  
+    y = get_smoothed_dummy_prediction(date,no_duplicates[assignment]) #*2
+    df_test.loc[(df_test["DATE_FORMAT"] == date) & (df_test["ASS_ASSIGNMENT"] == assignment) , "prediction"] = y    
 # %% Write to sumbission file
 
-d_sub = df_test[['DATE', 'ASS_ASSIGNMENT', 'prediction']]
-d_sub.to_csv('data/test_submission_gbm.csv', sep="\t", encoding='utf-8', index=False)
+#d_sub = df_test[['DATE', 'ASS_ASSIGNMENT', 'prediction']]
+#d_sub.to_csv('data/test_submission_gbm.csv', sep="\t", encoding='utf-8', index=False)
+#%%
 
+d_sub = df_test[['DATE', 'ASS_ASSIGNMENT', 'prediction']]
+d_sub.to_csv('data/test_submission_gbm_tel_2.csv', sep="\t", encoding='utf-8', index=False)
 
 # %% write to submission file with over-estimation
 d_sub_2=d_sub.copy()
