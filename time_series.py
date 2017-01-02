@@ -171,9 +171,13 @@ sub_data = get_submission_data()
 sub_assignments = pd.unique(sub_data.ASS_ASSIGNMENT)
 # first day of each week in the submission data
 sub_first_days = list(sub_data.DATE_FORMAT.apply(lambda x: x.date()).unique())[0::7]
+# for writing predictions easily
+sub_dates = dict()
+for a in sub_assignments : 
+    sub_dates[a] = list(sub_data[sub_data.ASS_ASSIGNMENT == a].DATE_FORMAT)
 
 # structure : dict(key = (assignment), value=list(first_day of the week, (train, submission data)))
-sub_train_dfs = {assign: list() for assign in sub_assignments }
+sub_train_dfs = {assign: list() for assign in sub_assignments}
 for a in sub_assignments:
     for first_day in sub_first_days:
         first_day_dt = datetime.datetime.combine(first_day, datetime.time(00, 00, 00))
@@ -197,25 +201,36 @@ for each assignment:
 	write prediction to df_test (with a function to be written)
 	write prediction to df_train (with a function to be written)
  """
-
+ 
+#os.environ["X13PATH"] = os.environ["HOME"] + "/x13asall_V1.1_B26"
+#x13 = os.environ["HOME"] + "/x13asall_V1.1_B26"
+predictions = {assign: pd.DataFrame() for assign in sub_assignments}
 for assignment in [sub_assignments[0]]:
     print("Model for assignment: " + assignment)
     for i, (first_day, (train_set, test_set)) in enumerate(sub_train_dfs[assignment]):
         if i != 0:
             break
         print("Week starting with: ", first_day)
-        #train_test = train_set.append(test_set)
-        #train_test[['CSPL_RECEIVED_CALLS']].tail(4*n_test).plot(figsize=(12, 8)) 
-        res = x13_arima_select_order(train_set)
-        print(res)
-        model = SARIMAX(train_set.CSPL_RECEIVED_CALLS, trend='n', order=(1,1,1), seasonal_order=(1,1,1,1))
+        n_train = len(train_set)
+        n_test = len(test_set)
+        resampled = train_set.CSPL_RECEIVED_CALLS.resample('D', how=sum)
+        model = SARIMAX(resampled, trend='n', order=(0,1,0), seasonal_order=(1,1,1,7))
         results = model.fit() 
         print(results.summary())
         #print(mod.score())
-        #train_test['FORECAST'] = model.predict(start=n_train-3*n_test,end=(n_train + n_test),dynamic=True)
-        #train_test[['FORECAST']].tail(4*n_test).plot(figsize=(12, 8)) 
+        train_test = pd.concat((train_set,test_set))
+        train_test['FORECAST'] = results.predict(start=n_train, end=n_train + n_test, dynamic=True)
+        predictions[assign] = pd.concat((predictions[assign], train_test.ix[n_train:].FORECAST))
         
+    # writing predictions to the submission data
+    for date in sub_dates[assignment]:
+        print(date)
+        prediction_as = predictions[assign]
+        print(prediction_as.loc[date])
+        sub_data.loc[(sub_data["DATE_FORMAT"] == date) & (sub_data["ASS_ASSIGNMENT"] == assignment) , "prediction"] = prediction_as.loc[date]
+
         
+       
 # %% Create a test set for local validation: for each assignement. 
 
 # this function returns a dict(key = assign, value = list( train, test for 12 weeks, one for each month ) )

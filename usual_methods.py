@@ -16,6 +16,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.dates import MonthLocator
 from sklearn.ensemble import ExtraTreesRegressor
+from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import cross_val_score
 from os import path
@@ -78,35 +79,46 @@ for assign in no_duplicates.keys():
     no_duplicates[assign].set_index(['index'], inplace=True)
     no_duplicates[assign].index.name = None
 
+# %%
+def date_range(start, end):
+    all_dates = [start]
+    curr = start
+    while curr != end:
+        curr += datetime.timedelta(minutes=30)
+        all_dates.append(curr)
+    return all_dates
+    
+full_date_range = date_range(df.DATE.min(), df.DATE.max())
+full_date_df = pd.Series(data=full_date_range, index=full_date_range)
+
+for assign in no_duplicates.keys():
+    no_duplicates[assign] = pd.concat([no_duplicates[assign], full_date_df], axis=1)[['DATE', 'CSPL_RECEIVED_CALLS']]
+    no_duplicates[assign].CSPL_RECEIVED_CALLS.fillna(0, inplace=True)
+    
 # %% Now let's construct a training set for the submission data
 
 sub_data = get_submission_data()
 sub_data = date_to_str(sub_data, ['DATE'])
 sub_data = date_format(sub_data, ['DATE'])
-# The key is the assignment (in the submission data), and the value is the list of of the first day of every week for this
-# assignment
-sub_dates = dict()
+# first day of each week in the submission data
+sub_first_days = list(sub_data.DATE_FORMAT.apply(lambda x: x.date()).unique())[0::7]
+
 sub_assignments = pd.unique(sub_data.ASS_ASSIGNMENT)
-for a in sub_assignments:
-    sub_df_assign = sub_data[sub_data.ASS_ASSIGNMENT == a].copy()
-    sub_dates[a] = list(sub_df_assign.DATE_FORMAT.apply(lambda x: x.date()).unique())[0::7]
 
 #%% Puts in train_set all data anterior to first_day_week, and in test set
 # all data of the week
 
-def get_train_test(first_day_week,data,sub_data):
-    first_day_week = datetime.datetime.combine(first_day_week, datetime.time(00, 00, 00))
+def get_train_test(first_day_week, data):
     last_day_week = first_day_week + datetime.timedelta(days=6, hours=23, minutes=30)
-    test_set = sub_data.loc[sub_data.DATE >= first_day_week].loc[sub_data.DATE <= last_day_week]
+    test_set = data[first_day_week: last_day_week].copy()
+    # small fix 
     test_set.loc[test_set.DATE.isnull(), 'DATE'] = test_set[test_set.DATE.isnull()].index
-    train_set = data.loc[data['DATE'] < first_day_week]
+    # the training set are all the dates prior to the the first date of the week
+    train_set = data[:first_day_week - datetime.timedelta(minutes=30)].copy()
     train_set.loc[train_set.DATE.isnull(), 'DATE'] = train_set[train_set.DATE.isnull()].index
     return (train_set, test_set)
     
-#%%  For testing purpose   
-first_day_week = sub_dates['Japon'][2]
-t = get_train_test(first_day_week,no_duplicates['Japon'],sub_data[sub_data.ASS_ASSIGNMENT == 'Japon'])
-print(datetime.datetime.combine(first_day_week, datetime.time(00, 00, 00)).minute)
+    
 #%% Feature extraction
 
 def fill_inexistant_features(train_features,test_features):
@@ -159,15 +171,12 @@ train_features = extract_features(data_train_ex)
 train_labels = extract_labels(data_train_ex)
 test_features = extract_features(data_test_ex)
 print(train_features.columns)
-#print(len(np.unique(train_features['WEEKDAY_0'])))
-print((np.unique(train_features['WEEKDAY_0'])))
-print((np.unique(train_features['TIME'])))
 
 #%% Loss function and scoring method
 
 def custom_loss(estimator,x, y):
     y_pred = estimator.predict(x)
-    diff = np.exp(0.1*(y-y_pred))-0.1*(y-y_pred)-1.
+    diff = np.exp(0.1*(y-y_pred))-0.1*(y-y_pred) - 1.
     return np.mean(diff)
     
 
@@ -190,72 +199,86 @@ for line in lines[1:]:
 d['DATE'] = dates
 d['DATE_FORMAT'] = dates
 d['ASS_ASSIGNMENT'] = assignments
-d['prediction'] = 0
+d['prediction'] = np.nan
  
 df_test = pd.DataFrame(data=d)
 
 df_test = date_to_str(df_test, ['DATE_FORMAT'])
 df_test = date_format(df_test, ['DATE_FORMAT'])
-print(df_test)
 
 #%% Test writing to output_df
 
-
-one_date = datetime.datetime.combine(sub_dates[sub_assignments[0]][0], datetime.time(00, 00, 00))
-index = [sub_assignments[0],one_date]
-print(df_test.loc[(df_test["DATE_FORMAT"] == one_date)])
+one_date = datetime.datetime.combine(sub_first_days[0], datetime.time(00, 00, 00))
 df_test.loc[(df_test["DATE_FORMAT"] == one_date) & (df_test["ASS_ASSIGNMENT"] == sub_assignments[0]) , "prediction"] = 1
-#output_df.set_value(index=index, col="prediction", value=1)
+print(df_test.head(2))
+df_test.loc[(df_test["DATE_FORMAT"] == one_date) & (df_test["ASS_ASSIGNMENT"] == sub_assignments[0]) , "prediction"] = np.nan
 print(df_test.head(2))
 #%%
 
-cv_score = []
 for assignment in sub_assignments:
-    cv_score_assignment = []
     print("***********")
-    print("Model for assignment " + str(assignment))
-    n_predictions = len(sub_dates[assignment])
-    for i,first_day in enumerate(sub_dates[assignment]):
-        print("** Week no " +  str(i + 1) + " out of " + str(n_predictions))
+    print("\n Model for assignment " + str(assignment))
+    df_assign = no_duplicates[assignment]
+    
+    scores = []
+    for i, first_day in enumerate(sub_first_days):
+        print("** Week starting with " +  str(first_day))
         ## Building train and test sets
-        train_set, test_set = get_train_test(first_day,no_duplicates[assignment],sub_data[sub_data.ASS_ASSIGNMENT == assignment]) 
+        first_day = datetime.datetime.combine(first_day, datetime.time(00, 00, 00)) 
+        train_set, test_set = get_train_test(first_day, df_assign) 
+        
+        #local test
+        first_day_test = first_day + datetime.timedelta(days=7, hours=0, minutes=0)
+        train_set_loc, test_set_loc = get_train_test(first_day_test, df_assign)
+        
         ## Extracting features and labels
-        train = extract_features(train_set)
-        test_set.drop('ASS_ASSIGNMENT', axis=1, inplace=True)
-        test_set.drop('DATE_FORMAT', axis=1, inplace=True)
-        test = extract_features(test_set)
-        train_features = train     # to delete    
-        test_features = test       # to delete
+        train_features = extract_features(train_set)
+        test_features = extract_features(test_set)
         train_features.drop('CSPL_RECEIVED_CALLS', axis=1, inplace=True)
+        test_features.drop('CSPL_RECEIVED_CALLS', axis=1, inplace=True)
         test_features = fill_inexistant_features(train_features,test_features)
         train_features.sort(axis=1, ascending=True, inplace=True)
         test_features.sort(axis=1, ascending=True, inplace=True)
         train_labels = extract_labels(train_set)
+        
+        train_features_loc = extract_features(train_set_loc)
+        test_features_loc = extract_features(test_set_loc)
+        train_features_loc.drop('CSPL_RECEIVED_CALLS', axis=1, inplace=True)
+        test_features_loc.drop('CSPL_RECEIVED_CALLS', axis=1, inplace=True)
+        test_features_loc = fill_inexistant_features(train_features_loc,test_features_loc)
+        train_features_loc.sort(axis=1, ascending=True, inplace=True)
+        test_features_loc.sort(axis=1, ascending=True, inplace=True)
+        train_labels_loc = extract_labels(train_set_loc)
+        test_labels_loc = extract_labels(test_set_loc)
+        
         ## Model
-        clf = RandomForestRegressor(n_estimators = 100)
-#        #cv_score_assignment.append(cross_val_score(clf,train_features.as_matrix(),train_labels.as_matrix(),cv=5,scoring=custom_loss).mean())
+        regressor = GradientBoostingRegressor(n_estimators = 500)
         train_features_matrix = train_features.as_matrix()
         train_labels_matrix = train_labels.as_matrix()
-        clf.fit(train_features_matrix,train_labels_matrix)
-        ypred = clf.predict(test_features.as_matrix())
+        regressor.fit(train_features_matrix,train_labels_matrix)
+        ypred = regressor.predict(test_features.as_matrix())
+        
+        score = custom_loss(regressor, test_features_loc.as_matrix(), test_labels_loc)
+        print("Score: ", first_day_test, score)
+        scores.append(score)
+        
         ## Write predictions to dataframe        
-        for i,date in enumerate(test_set["DATE"]):
-            df_test.loc[(df_test["DATE_FORMAT"] == date) & (df_test["ASS_ASSIGNMENT"] == assignment) , "prediction"] = ypred[i]
-
+        for i, date in enumerate(test_features.index):
+            df_test.loc[(df_test["DATE_FORMAT"] == date) & (df_test["ASS_ASSIGNMENT"] == assignment) , "prediction"] = max(ypred[i], 0)
+            df_assign.loc[date, 'CSPL_RECEIVED_CALLS'] = max(0, ypred[i])
         
-        
-    #cv_score.append(cv_score_assignment)
-    #print(cv_score_assignment)
-        
-print(df_test['predictions'])       
+    print("Mean score for " + assignment, np.mean(scores))
+                 
+print(df_test['prediction'])       
 
 
 # %% Write to sumbission file
 
 d_sub = df_test[['DATE', 'ASS_ASSIGNMENT', 'prediction']]
-d_sub.to_csv('data/test_submission_rf_3.csv', sep="\t", encoding='utf-8', index=False)
+d_sub.to_csv('data/test_submission_gbm.csv', sep="\t", encoding='utf-8', index=False)
 
-# %%
+
+# %% write to submission file with over-estimation
 d_sub_2=d_sub.copy()
 d_sub_2['prediction'] = 2 * d_sub_2['prediction']
-d_sub_2.to_csv('data/test_submission_rf_2.csv', sep="\t", encoding='utf-8', index=False)
+d_sub_2.to_csv('data/test_submission_gbm_2.csv', sep="\t", encoding='utf-8', index=False)
