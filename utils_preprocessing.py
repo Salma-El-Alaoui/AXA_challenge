@@ -47,21 +47,24 @@ def get_submission_data():
     lines = open("data/submission.txt", "r", encoding="utf-8").readlines()
     dates = []
     assignments = []
+    predictions = []
     
-    d = dict.fromkeys(['DATE', 'DATE_FORMAT', 'ASS_ASSIGNMENT'])
+    d = dict.fromkeys(['DATE', 'DATE_FORMAT', 'ASS_ASSIGNMENT','prediction'])
     
     for line in lines[1:]:
         row = line.split("\t")
         dates.append(row[0])
         assignments.append(row[1])
+        predictions.append(row[2])
     
     d['DATE'] = dates
     d['DATE_FORMAT'] = dates
     d['ASS_ASSIGNMENT'] = assignments
+    d['prediction'] = np.nan
      
     df_test = pd.DataFrame(data=d)
-    
     df_test = date_to_str(df_test, ['DATE_FORMAT'])
     df_test = date_format(df_test, ['DATE_FORMAT'])
-    
     return df_test
+    
+    

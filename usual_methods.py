@@ -82,6 +82,7 @@ for assign in no_duplicates.keys():
     no_duplicates[assign].index.name = None
 
 # %%
+
 def date_range(start, end):
     all_dates = [start]
     curr = start
@@ -141,9 +142,35 @@ def fill_inexistant_features(train_features,test_features):
             test_features[str(column)] = np.zeros(n)
     return test_features
     
-def fill_holidays_next(table, holiday_column='DAY_OFF_AFTER', date_column='DATE', holiday= holidays):
-    table[holiday_column]=table[date_column].apply(lambda x : str(x.date()+datetime.timedelta(days=1)) in holiday).astype(int)
+def is_working_day(date, holidays):
+    day = date.weekday()
+    if day == 5 or day == 6 or date in holidays:
+        return False
+    return True
+    
+def fill_holidays_next(table, holiday_column='DAY_OFF_AFTER', date_column='DATE', holiday=holidays):
+    table[holiday_column] = 0
+    holiday_list = [datetime.datetime.strptime(s, '%Y-%m-%d') for s in holidays]
+    for holiday in holiday_list:
+        if holiday.weekday() in [5, 6]:
+            continue
+        day_after = holiday + datetime.timedelta(days=1)
+        while (not is_working_day(day_after, holiday_list)): 
+            day_after += datetime.timedelta(days = 1)
+        table[holiday_column] = table.index.map(lambda x: x.date() == day_after.date())
     return table
+
+def fill_holidays_before(table, holiday_column='DAY_OFF_BEFORE', date_column='DATE', holiday=holidays):
+    table[holiday_column] = 0
+    holiday_list = [datetime.datetime.strptime(s, '%Y-%m-%d') for s in holidays]
+    for holiday in holiday_list:
+        if holiday.weekday() in [5, 6]:
+            continue
+        day_after = holiday - datetime.timedelta(days=1)
+        while (not is_working_day(day_after, holiday_list)): 
+            day_after -= datetime.timedelta(days = 1)
+        table[holiday_column] = table.index.map(lambda x: x.date() == day_after.date())
+    return table    
 
     
 def extract_features(input_data):
@@ -153,18 +180,19 @@ def extract_features(input_data):
     #data_dummy_month = pd.get_dummies(data['MONTH'],prefix='MONTH')
     data['DAY'] = data.DATE.apply(lambda x: x.day) 
     data['WEEK_DAY'] = data.DATE.apply(lambda x: x.weekday()) 
-    data_dummy_weekday = pd.get_dummies(data['WEEK_DAY'],prefix='WEEKDAY')
+    data_dummy_weekday = pd.get_dummies(data['WEEK_DAY'], prefix='WEEKDAY', drop_first=True)
     data['HOUR'] = data.DATE.apply(lambda x: x.hour) 
     data['MINUTE'] = data.DATE.apply(lambda x: x.minute * 5./300.) # .minute gives 0 or 30,
     #and to have continuous times, we want 30 to becomes half an hour, ie. 0.5
-    data['TIME'] = data['HOUR'] + data['MINUTE']
+    #data['TIME'] = data['HOUR'] + data['MINUTE']
     data['MINUTE'] = data['MINUTE'].apply(lambda x: x/0.5) # we still want to keep the indication of half hours: if was 0.5, becomes 1; if was 0, stays 0
     data = fill_holidays(data)
     data = fill_holidays_next(data)
-    data.drop('HOUR', axis=1, inplace=True)
+    data = fill_holidays_before(data)
+    #data.drop('HOUR', axis=1, inplace=True)
     #data.drop('MINUTE', axis=1, inplace=True)
     #data.drop('MONTH', axis=1, inplace=True)
-    data.drop('WEEK_DAY', axis=1, inplace=True)
+    #data.drop('WEEK_DAY', axis=1, inplace=True)
     data.drop('DATE', axis=1, inplace=True)
     #data_with_dummies = data.join(data_dummy_month).join(data_dummy_weekday)
     data_with_dummies = data.join(data_dummy_weekday)
@@ -179,9 +207,7 @@ data_train_ex = no_duplicates['Japon'].copy()
 data_test_ex = sub_data[sub_data.ASS_ASSIGNMENT == 'Japon'].copy()
 train_features = extract_features(data_train_ex)
 train_labels = extract_labels(data_train_ex)
-test_features = extract_features(data_test_ex)
-print(train_features['DAY_OFF'].sum())
-print(train_features['DAY_OFF_AFTER'].sum())
+#test_features = extract_features(data_test_ex)
 print(train_features.columns)
 #%% Loss function and scoring method
 
@@ -190,7 +216,9 @@ def custom_loss(estimator,x, y):
     diff = np.exp(0.1*(y-y_pred))-0.1*(y-y_pred) - 1.
     return np.mean(diff)
     
-
+def compute_score(y_true, y_predict, alpha=0.1):
+    return np.average(np.exp(alpha * (y_true - y_predict)) - alpha * (y_true - y_predict) - np.ones(len(y_predict)))
+    
 #%% dataframe for submission
 
 
@@ -224,7 +252,8 @@ df_test.loc[(df_test["DATE_FORMAT"] == one_date) & (df_test["ASS_ASSIGNMENT"] ==
 print(df_test.head(2))
 df_test.loc[(df_test["DATE_FORMAT"] == one_date) & (df_test["ASS_ASSIGNMENT"] == sub_assignments[0]) , "prediction"] = np.nan
 print(df_test.head(2))
-#%%
+#%% GBM
+
 scores = dict()
 for assignment in sub_assignments:
     print("***********")
@@ -270,12 +299,9 @@ for assignment in sub_assignments:
         regressor.fit(train_features_matrix,train_labels_matrix)
         ypred = regressor.predict(test_features.as_matrix())
         score = custom_loss(regressor, test_features_loc.as_matrix(), test_labels_loc)
-        #print(test_labels_loc.sum())
-        #print(regressor.predict(test_features_loc.as_matrix()).sum())
+    
         print("Score: ", first_day_test, score)
-        #scores.append(score)
         scores[assignment].append(score)
-        #print(scores)
         
         ## Write predictions to dataframe        
         for i, date in enumerate(test_features.index):
@@ -285,6 +311,80 @@ for assignment in sub_assignments:
     #print("Mean score for " + assignment, np.mean(scores[assignment]))
                  
 print(df_test['prediction'])       
+
+# %% ev
+
+score_means = []
+for a in sub_assignments:
+    score_mean = np.mean(scores[a])
+    print("score for "+ str(a) + " = "+ str(score_mean))
+    score_means.append(score_mean)
+    
+print("mean_score")
+print(np.mean(score_means))
+
+# %% Simple mean Predictor
+# Still in progress, don't run 
+NUMBER_DAYS = 3*365/(2*7)
+
+scores = dict()
+for assignment in sub_assignments:
+    print("***********")
+    print("\n Model for assignment " + str(assignment))
+    df_assign = no_duplicates[assignment]
+    
+    
+    scores[assignment] = []
+    for i, first_day in enumerate(sub_first_days):
+        print("** Week starting with " +  str(first_day))
+        ## Building train and test sets
+        first_day = datetime.datetime.combine(first_day, datetime.time(00, 00, 00)) 
+        train_set, test_set = get_train_test(first_day, df_assign) 
+        
+        #local test
+        first_day_test = first_day + datetime.timedelta(days=7, hours=0, minutes=0)
+        train_set_loc, test_set_loc = get_train_test(first_day_test, df_assign)
+        
+        ## Extracting features and labels
+        train_features = extract_features(train_set)
+        test_features = extract_features(test_set)
+        test_features = fill_inexistant_features(train_features,test_features)
+        train_features.sort(axis=1, ascending=True, inplace=True)
+        test_features.sort(axis=1, ascending=True, inplace=True)
+        train_labels = extract_labels(train_set)
+        
+        train_features_loc = extract_features(train_set_loc)
+        test_features_loc = extract_features(test_set_loc)
+        test_features_loc = fill_inexistant_features(train_features_loc,test_features_loc)
+        train_features_loc.sort(axis=1, ascending=True, inplace=True)
+        test_features_loc.sort(axis=1, ascending=True, inplace=True)
+        train_labels_loc = extract_labels(train_set_loc)
+        test_labels_loc = extract_labels(test_set_loc)
+        
+        ## Model
+        means_df = pd.DataFrame({"mean":train_features.groupby(['WEEK_DAY', 'TIME'])['CSPL_RECEIVED_CALLS'].sum()}).reset_index()
+        means_df['mean'] = means_df['mean'] / NUMBER_DAYS
+        df_merge= pd.merge(test_features, means_df,on=['WEEK_DAY', 'TIME'], how='inner')
+        df_merge['prediction'] = df_merge['mean']
+        df_merge_loc = pd.merge(test_features_loc, means_df,on=['WEEK_DAY', 'TIME'], how='inner')
+        df_merge_loc['prediction'] = df_merge_loc['mean']
+        print(df_merge)
+        score = compute_score(df_merge_loc['prediction'], test_labels_loc)
+    
+        print("Score: ", first_day_test, score)
+        scores[assignment].append(score)
+        
+        ## Write predictions to dataframe 
+        # TODO !
+        for date in enumerate(test_features.index):
+            df_test.loc[(df_test["DATE_FORMAT"] == date) & (df_test["ASS_ASSIGNMENT"] == assignment) , "prediction"] = 0
+            df_assign.loc[date, 'CSPL_RECEIVED_CALLS'] = 0
+        
+    #print("Mean score for " + assignment, np.mean(scores[assignment]))
+                 
+print(df_test['prediction'])       
+
+
 
 # %% Telephonie
 
@@ -331,22 +431,18 @@ def get_smoothed_dummy_prediction(day,df_train):
     return np.max(preds)
 
 #%%
-assignment = "Téléphonie"
-sub_dates = list(sub_data.DATE_FORMAT.apply(lambda x: x).unique())
-
-for date in sub_dates:  
-    y = get_smoothed_dummy_prediction(date,no_duplicates[assignment]) #*2
-    df_test.loc[(df_test["DATE_FORMAT"] == date) & (df_test["ASS_ASSIGNMENT"] == assignment) , "prediction"] = y    
-# %% Write to sumbission file
-
-#d_sub = df_test[['DATE', 'ASS_ASSIGNMENT', 'prediction']]
-#d_sub.to_csv('data/test_submission_gbm.csv', sep="\t", encoding='utf-8', index=False)
+#assignment = "Téléphonie"
+#sub_dates = list(sub_data.DATE_FORMAT.apply(lambda x: x).unique())
+#
+#for date in sub_dates:  
+#    y = get_smoothed_dummy_prediction(date,no_duplicates[assignment]) #*2
+#    df_test.loc[(df_test["DATE_FORMAT"] == date) & (df_test["ASS_ASSIGNMENT"] == assignment) , "prediction"] = y    
+                
 #%%
-
 d_sub = df_test[['DATE', 'ASS_ASSIGNMENT', 'prediction']]
 d_sub.to_csv('data/test_submission_gbm_tel_2.csv', sep="\t", encoding='utf-8', index=False)
 
 # %% write to submission file with over-estimation
 d_sub_2=d_sub.copy()
-d_sub_2['prediction'] = 2 * d_sub_2['prediction']
+d_sub_2['prediction'] = 1.9 * d_sub_2['prediction']
 d_sub_2.to_csv('data/test_submission_gbm_2.csv', sep="\t", encoding='utf-8', index=False)
