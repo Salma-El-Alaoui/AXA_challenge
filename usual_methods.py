@@ -80,7 +80,8 @@ for assign in no_duplicates.keys():
     no_duplicates[assign]['index'] = no_duplicates[assign].DATE
     no_duplicates[assign].set_index(['index'], inplace=True)
     no_duplicates[assign].index.name = None
-
+    
+no_duplicates_score = no_duplicates.copy()
 # %%
 
 def date_range(start, end):
@@ -192,7 +193,7 @@ def extract_features(input_data):
     #data.drop('HOUR', axis=1, inplace=True)
     #data.drop('MINUTE', axis=1, inplace=True)
     #data.drop('MONTH', axis=1, inplace=True)
-    #data.drop('WEEK_DAY', axis=1, inplace=True)
+    data.drop('WEEK_DAY', axis=1, inplace=True)
     data.drop('DATE', axis=1, inplace=True)
     #data_with_dummies = data.join(data_dummy_month).join(data_dummy_weekday)
     data_with_dummies = data.join(data_dummy_weekday)
@@ -218,6 +219,11 @@ def custom_loss(estimator,x, y):
     
 def compute_score(y_true, y_predict, alpha=0.1):
     return np.average(np.exp(alpha * (y_true - y_predict)) - alpha * (y_true - y_predict) - np.ones(len(y_predict)))
+    
+def extract_labels_score(input_data, assignment):
+    gap_data = no_duplicates_score[assignment]
+    #return input_data.loc[gap_data.index].CSPL_RECEIVED_CALLS
+    return input_data.loc[input_data.index & gap_data.index].CSPL_RECEIVED_CALLS
     
 #%% dataframe for submission
 
@@ -289,8 +295,8 @@ for assignment in sub_assignments:
         test_features_loc = fill_inexistant_features(train_features_loc,test_features_loc)
         train_features_loc.sort(axis=1, ascending=True, inplace=True)
         test_features_loc.sort(axis=1, ascending=True, inplace=True)
-        train_labels_loc = extract_labels(train_set_loc)
-        test_labels_loc = extract_labels(test_set_loc)
+        train_labels_loc = extract_labels_score(train_set_loc, assignment)
+        test_labels_loc = extract_labels_score(test_set_loc, assignment)
         
         ## Model
         regressor = GradientBoostingRegressor(n_estimators = 500)
@@ -298,7 +304,10 @@ for assignment in sub_assignments:
         train_labels_matrix = train_labels.as_matrix()
         regressor.fit(train_features_matrix,train_labels_matrix)
         ypred = regressor.predict(test_features.as_matrix())
-        score = custom_loss(regressor, test_features_loc.as_matrix(), test_labels_loc)
+        y_pred_loc = regressor.predict(test_features_loc.as_matrix())
+        d = {'CSPL_RECEIVED_CALLS' : y_pred_loc}
+        y_pred_loc_df = pd.DataFrame(data=d, index=test_features_loc.index)
+        score = compute_score(test_labels_loc, extract_labels_score(y_pred_loc_df, assignment))
     
         print("Score: ", first_day_test, score)
         scores[assignment].append(score)
@@ -358,8 +367,8 @@ for assignment in sub_assignments:
         test_features_loc = fill_inexistant_features(train_features_loc,test_features_loc)
         train_features_loc.sort(axis=1, ascending=True, inplace=True)
         test_features_loc.sort(axis=1, ascending=True, inplace=True)
-        train_labels_loc = extract_labels(train_set_loc)
-        test_labels_loc = extract_labels(test_set_loc)
+        train_labels_loc = extract_labels_score(train_set_loc)
+        test_labels_loc = extract_labels_score(test_set_loc)
         
         ## Model
         means_df = pd.DataFrame({"mean":train_features.groupby(['WEEK_DAY', 'TIME'])['CSPL_RECEIVED_CALLS'].sum()}).reset_index()
