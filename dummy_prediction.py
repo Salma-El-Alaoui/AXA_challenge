@@ -224,24 +224,96 @@ df_test = date_to_str(df_test, ['DATE_FORMAT'])
 df_test = date_format(df_test, ['DATE_FORMAT'])
 print(df_test)
 
-# %% Predict number of calls using only the number of calls at week W-1
+#%% Evolution of number of calls in the day between two consecutive weeks
 sub_dates = list(sub_data.DATE_FORMAT.apply(lambda x: x).unique())
 
+def create_date_only_column(df_train):
+    df_train["DATE_ONLY"] = df_train["DATE"].apply(lambda whole_date: whole_date.date())
+
+"""
+For one date (year, month, day only) and one data_frame (for 1 assignment), 
+returns the evolution between week -1 and week -2 as number_of_calls at week -1 /
+number of calls at week -2. If one of those numbers is equal to 0, returns 0.
+"""    
+def get_daily_evolution(day, df_train):
+    dates = []
+    #print(day)
+    day_minus_1_week = day - pd.to_timedelta(timedelta(weeks=1))
+    day_minus_2_weeks = day - pd.to_timedelta(timedelta(weeks=2))
+    day_minus_3_weeks = day - pd.to_timedelta(timedelta(weeks=3))
+    dates.append(day_minus_1_week)
+    dates.append(day_minus_2_weeks)
+    dates.append(day_minus_3_weeks)
+    
+    n_calls = []
+    
+    for date in dates:
+        try:
+            temp = df_train.loc[(df_train["DATE_ONLY"] == date)]["CSPL_RECEIVED_CALLS"]
+            my_sum = temp.sum()
+            n_calls.append(my_sum)
+        except KeyError:
+            n_calls.append(0)
+            
+    evolution = 1.
+    evolution_1 = 1.
+    if (sum(n_calls) > 15):
+        if (n_calls[0] != 0) & (n_calls[1] != 0):
+            #print("here")
+            evolution_1 = float(n_calls[0]) / float(n_calls[1])
+            evolution = evolution_1
+            
+        if (n_calls[1] != 0) & (n_calls[2] != 0):
+            #print("here")
+            evolution = max([evolution_1,float(n_calls[1]) / float(n_calls[2])])
+            
+    #print(str(n_calls)+ " evol " + str(evolution))
+    return evolution
+        
+
+ # for testing purpose   
+assignment_ex = sub_assignments[0]
+date_ex = sub_first_days[0]
+df_train_ex = no_duplicates[assignment_ex]
+create_date_only_column(df_train_ex)
+sub_dates_only = list(df_train_ex.DATE_ONLY.apply(lambda x: x).unique())
+get_evolution(date_ex,df_train_ex)
+   
+
+# %% Predict number of calls using only the number of calls at week W-1
 
 for assignment in sub_assignments:
     print("*** assignment " + str(assignment))
+    df_train = no_duplicates[assignment]
     for date in sub_dates:  
-        y = get_previous_week_call_nb(date,no_duplicates[assignment])[1]
+        y = get_previous_week_call_nb(date,df_train)[1]
         df_test.loc[(df_test["DATE_FORMAT"] == date) & (df_test["ASS_ASSIGNMENT"] == assignment) , "prediction"] = y
 
-                    
 #%% Predict a smoothed version (look at week -1, week -2, week -3, in a time window of half an hour before, half an hour after)
 
 for assignment in sub_assignments:
     print("*** assignment " + str(assignment))
+    df_train = no_duplicates[assignment]
     for date in sub_dates:  
-        y = get_smoothed_dummy_prediction(date,no_duplicates[assignment])
+        y = get_smoothed_dummy_prediction(date,df_train)[1]
         df_test.loc[(df_test["DATE_FORMAT"] == date) & (df_test["ASS_ASSIGNMENT"] == assignment) , "prediction"] = y
+
+                    
+#%% Predict a smoothed version (look at week -1, week -2, week -3, in a time window of half an hour before, half an hour after)
+# multiplication by daily_evolution
+
+for assignment in sub_assignments:  
+#for assignment in ["Téléphonie"]:  
+    print("*** assignment " + str(assignment))
+    df_train = no_duplicates[assignment]
+    create_date_only_column(df_train)
+    for i,date in enumerate(sub_dates):  
+        if i%1000 == 0:
+            print(str(i) + " out of " + str(len(sub_dates)))
+        date_only = pd.to_datetime(date).date()
+        evolution_rate = get_daily_evolution(date_only, df_train)
+        y = get_smoothed_dummy_prediction(date,df_train)
+        df_test.loc[(df_test["DATE_FORMAT"] == date) & (df_test["ASS_ASSIGNMENT"] == assignment) , "prediction"] = y*evolution_rate
 
 # %% Write to sumbission file
 
@@ -257,10 +329,10 @@ for assignment in sub_assignments:
 # %% Write to sumbission file
 
 d_sub = df_test[['DATE', 'ASS_ASSIGNMENT', 'prediction']]
-d_sub.to_csv('data/test_submission_dummy_smoothed_max_1.csv', sep="\t", encoding='utf-8', index=False)
+d_sub.to_csv('data/test_submission_dummy_smoothed_max_evol_1.csv', sep="\t", encoding='utf-8', index=False)
 
 # %% Write to sumbission file
 
 d_sub_2=d_sub.copy()
-d_sub_2['prediction'] = 2 * d_sub_2['prediction']
-d_sub_2.to_csv('data/test_submission_dummy_smoothed_max_2.csv', sep="\t", encoding='utf-8', index=False)
+d_sub_2['prediction'] = d_sub['prediction'] + np.sqrt(d_sub['prediction'] )
+d_sub_2.to_csv('data/test_submission_dummy_smoothed_max_evol_6.csv', sep="\t", encoding='utf-8', index=False)
