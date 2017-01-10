@@ -158,7 +158,7 @@ def fill_holidays_next(table, holiday_column='DAY_OFF_AFTER', date_column='DATE'
         day_after = holiday + datetime.timedelta(days=1)
         while (not is_working_day(day_after, holiday_list)): 
             day_after += datetime.timedelta(days = 1)
-        table[holiday_column] = table.index.map(lambda x: x.date() == day_after.date())
+        table[holiday_column] = table.index.map(lambda x: x.date() == day_after.date() or x.date().weekday() == 0)
     return table
 
 def fill_holidays_before(table, holiday_column='DAY_OFF_BEFORE', date_column='DATE', holiday=holidays):
@@ -170,7 +170,7 @@ def fill_holidays_before(table, holiday_column='DAY_OFF_BEFORE', date_column='DA
         day_after = holiday - datetime.timedelta(days=1)
         while (not is_working_day(day_after, holiday_list)): 
             day_after -= datetime.timedelta(days = 1)
-        table[holiday_column] = table.index.map(lambda x: x.date() == day_after.date())
+        table[holiday_column] = table.index.map(lambda x: x.date() == day_after.date() or x.date().weekday() == 4)
     return table    
 
     
@@ -258,6 +258,74 @@ df_test.loc[(df_test["DATE_FORMAT"] == one_date) & (df_test["ASS_ASSIGNMENT"] ==
 print(df_test.head(2))
 df_test.loc[(df_test["DATE_FORMAT"] == one_date) & (df_test["ASS_ASSIGNMENT"] == sub_assignments[0]) , "prediction"] = np.nan
 print(df_test.head(2))
+
+
+#%% Cross Validation
+
+scores_val = dict()
+scores = dict()
+
+for assignment in sub_assignments:
+    print("***********")
+    print("\n Model for assignment " + str(assignment))
+    df_assign = no_duplicates[assignment]
+    surestimation = [1.5, 1.6, 1.7, 1.8, 1.9, 2.]
+    
+    scores_val[assignment] = []
+    scores[assignment] = []
+    for coeff in surestimation:
+        for i, first_day in enumerate(sub_first_days):
+            print("** Week starting with " +  str(first_day))
+            ## Building train and test sets
+            first_day = datetime.datetime.combine(first_day, datetime.time(00, 00, 00)) 
+            train_set, test_set = get_train_test(first_day, df_assign) 
+            
+            # local test
+            first_day_test = first_day + datetime.timedelta(days=7, hours=0, minutes=0)
+            train_set_loc, test_set_loc = get_train_test(first_day_test, df_assign)
+            
+            ## Extracting features and labels
+            train_features = extract_features(train_set)
+            test_features = extract_features(test_set)
+            train_features.drop('CSPL_RECEIVED_CALLS', axis=1, inplace=True)
+            test_features.drop('CSPL_RECEIVED_CALLS', axis=1, inplace=True)
+            test_features = fill_inexistant_features(train_features,test_features)
+            train_features.sort(axis=1, ascending=True, inplace=True)
+            test_features.sort(axis=1, ascending=True, inplace=True)
+            train_labels = extract_labels(train_set)
+            
+            train_features_loc = extract_features(train_set_loc)
+            test_features_loc = extract_features(test_set_loc)
+            train_features_loc.drop('CSPL_RECEIVED_CALLS', axis=1, inplace=True)
+            test_features_loc.drop('CSPL_RECEIVED_CALLS', axis=1, inplace=True)
+            test_features_loc = fill_inexistant_features(train_features_loc,test_features_loc)
+            train_features_loc.sort(axis=1, ascending=True, inplace=True)
+            test_features_loc.sort(axis=1, ascending=True, inplace=True)
+            train_labels_loc = extract_labels_score(train_set_loc, assignment)
+            test_labels_loc = extract_labels_score(test_set_loc, assignment)
+            
+            # Model
+            regressor = GradientBoostingRegressor(n_estimators = 1500)
+            train_features_matrix = train_features.as_matrix()
+            train_labels_matrix = train_labels.as_matrix()
+            regressor.fit(train_features_matrix,train_labels_matrix)
+            ypred = regressor.predict(test_features.as_matrix())
+            y_pred_loc = regressor.predict(test_features_loc.as_matrix())
+            d = {'CSPL_RECEIVED_CALLS' : y_pred_loc}
+            y_pred_loc_df = coeff * pd.DataFrame(data=d, index=test_features_loc.index)
+            score = compute_score(test_labels_loc, extract_labels_score(y_pred_loc_df, assignment))
+            scores[assignment].append(score)
+            ## Write predictions to dataframe        
+            for i, date in enumerate(test_features.index):
+                df_test.loc[(df_test["DATE_FORMAT"] == date) & (df_test["ASS_ASSIGNMENT"] == assignment) , "prediction"] = max(ypred[i], 0)
+                df_assign.loc[date, 'CSPL_RECEIVED_CALLS'] = max(0, ypred[i])
+        
+        mean = np.mean(scores[assignment])
+        scores_val[assignment].append((coeff, mean))
+        print("Mean score for assignment: " + assignment + " ,coeff: " + str(coeff), mean)
+    
+    print("Best Coeff for " + assignment, min(list(scores_val[assignment].values()), key=lambda v: v[1]))
+                      
 #%% GBM
 
 scores = dict()
@@ -265,7 +333,7 @@ for assignment in sub_assignments:
     print("***********")
     print("\n Model for assignment " + str(assignment))
     df_assign = no_duplicates[assignment]
-    
+    surestimation = [1.5, 1.8, 1.9]
     
     scores[assignment] = []
     for i, first_day in enumerate(sub_first_days):
@@ -299,7 +367,12 @@ for assignment in sub_assignments:
         test_labels_loc = extract_labels_score(test_set_loc, assignment)
         
         ## Model
-        regressor = GradientBoostingRegressor(n_estimators = 500)
+        #if assignment == 'CAT':
+        #   regressor = GradientBoostingRegressor(n_estimators = 500, loss='quantile', alpha=0.99)
+        #if assignment == 'Téléphonie':
+        #     regressor = GradientBoostingRegressor(n_estimators = 500, loss='quantile', alpha=0.99)
+        #else:
+        regressor = GradientBoostingRegressor(n_estimators = 1500)
         train_features_matrix = train_features.as_matrix()
         train_labels_matrix = train_labels.as_matrix()
         regressor.fit(train_features_matrix,train_labels_matrix)
@@ -317,7 +390,7 @@ for assignment in sub_assignments:
             df_test.loc[(df_test["DATE_FORMAT"] == date) & (df_test["ASS_ASSIGNMENT"] == assignment) , "prediction"] = max(ypred[i], 0)
             df_assign.loc[date, 'CSPL_RECEIVED_CALLS'] = max(0, ypred[i])
         
-    #print("Mean score for " + assignment, np.mean(scores[assignment]))
+    print("Mean score for " + assignment, np.mean(scores[assignment]))
                  
 print(df_test['prediction'])       
 
@@ -453,5 +526,5 @@ d_sub.to_csv('data/test_submission_gbm_tel_2.csv', sep="\t", encoding='utf-8', i
 
 # %% write to submission file with over-estimation
 d_sub_2=d_sub.copy()
-d_sub_2['prediction'] = 1.9 * d_sub_2['prediction']
+d_sub_2['prediction'] = 2.5 * d_sub_2['prediction']
 d_sub_2.to_csv('data/test_submission_gbm_2.csv', sep="\t", encoding='utf-8', index=False)
