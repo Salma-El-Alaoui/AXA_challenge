@@ -204,7 +204,7 @@ def fill_holidays_next(table, holiday_column='DAY_OFF_AFTER', date_column='DATE'
         day_after = holiday + datetime.timedelta(days=1)
         while (not is_working_day(day_after, holiday_list)): 
             day_after += datetime.timedelta(days = 1)
-        table[holiday_column] = table.index.map(lambda x: x.date() == day_after.date() or x.date().weekday() == 0)
+        table[holiday_column] = table.index.map(lambda x: x.date() == day_after.date())
     return table
 
 def fill_holidays_before(table, holiday_column='DAY_OFF_BEFORE', date_column='DATE', holiday=holidays):
@@ -216,7 +216,7 @@ def fill_holidays_before(table, holiday_column='DAY_OFF_BEFORE', date_column='DA
         day_after = holiday - datetime.timedelta(days=1)
         while (not is_working_day(day_after, holiday_list)): 
             day_after -= datetime.timedelta(days = 1)
-        table[holiday_column] = table.index.map(lambda x: x.date() == day_after.date() or x.date().weekday() == 4)
+        table[holiday_column] = table.index.map(lambda x: x.date() == day_after.date())
     return table    
 
 def extract_features(input_data):
