@@ -199,7 +199,7 @@ def fill_holidays_before(table, holiday_column='DAY_OFF_BEFORE', date_column='DA
     return table    
 
     
-def extract_features_train(input_data):
+def extract_features(input_data):
     data = input_data.copy()
     #print("***")
     #get_n_calls_prev_weeks(data['DATE'][0], input_data)
@@ -227,31 +227,6 @@ def extract_features_train(input_data):
     data_with_dummies = data.join(data_dummy_weekday)
     return data_with_dummies
 
-def extract_features_test(input_data,input_train):
-    data = input_data.copy()
-    
-    data['YEAR'] = data.DATE.apply(lambda x: x.year) 
-    data['MONTH'] = data.DATE.apply(lambda x: x.month) 
-    #data_dummy_month = pd.get_dummies(data['MONTH'],prefix='MONTH')
-    data['DAY'] = data.DATE.apply(lambda x: x.day) 
-    data['WEEK_DAY'] = data.DATE.apply(lambda x: x.weekday()) 
-    data_dummy_weekday = pd.get_dummies(data['WEEK_DAY'], prefix='WEEKDAY', drop_first=True)
-    data['HOUR'] = data.DATE.apply(lambda x: x.hour) 
-    data['MINUTE'] = data.DATE.apply(lambda x: x.minute * 5./300.) # .minute gives 0 or 30,
-    #and to have continuous times, we want 30 to becomes half an hour, ie. 0.5
-    #data['TIME'] = data['HOUR'] + data['MINUTE']
-    data['MINUTE'] = data['MINUTE'].apply(lambda x: x/0.5) # we still want to keep the indication of half hours: if was 0.5, becomes 1; if was 0, stays 0
-    data = fill_holidays(data)
-    data = fill_holidays_next(data)
-    data = fill_holidays_before(data)
-    #data.drop('HOUR', axis=1, inplace=True)
-    #data.drop('MINUTE', axis=1, inplace=True)
-    #data.drop('MONTH', axis=1, inplace=True)
-    data.drop('WEEK_DAY', axis=1, inplace=True)
-    data.drop('DATE', axis=1, inplace=True)
-    #data_with_dummies = data.join(data_dummy_month).join(data_dummy_weekday)
-    data_with_dummies = data.join(data_dummy_weekday)
-    return data_with_dummies
     
 def extract_labels(input_data):
     return input_data.CSPL_RECEIVED_CALLS
@@ -259,7 +234,7 @@ def extract_labels(input_data):
 ## example    
 data_train_ex = no_duplicates['Japon'].copy()
 data_test_ex = sub_data[sub_data.ASS_ASSIGNMENT == 'Japon'].copy()
-train_features = extract_features_train(data_train_ex)
+train_features = extract_features(data_train_ex)
 train_labels = extract_labels(data_train_ex)
 #test_features = extract_features(data_test_ex)
 print(train_features.columns)
@@ -318,6 +293,8 @@ print(df_test.head(2))
 scores_val = dict()
 scores = dict()
 
+n_lines = 3*48*7
+
 for assignment in sub_assignments:
     print("***********")
     print("\n Model for assignment " + str(assignment))
@@ -359,8 +336,8 @@ for assignment in sub_assignments:
             
             # Model
             regressor = GradientBoostingRegressor(n_estimators = 1500)
-            train_features_matrix = train_features.as_matrix()
-            train_labels_matrix = train_labels.as_matrix()
+            train_features_matrix = train_features.as_matrix()[-n_lines:]
+            train_labels_matrix = train_labels.as_matrix()[-n_lines:]
             regressor.fit(train_features_matrix,train_labels_matrix)
             ypred = regressor.predict(test_features.as_matrix())
             y_pred_loc = regressor.predict(test_features_loc.as_matrix())
