@@ -125,6 +125,31 @@ def get_train_test(first_day_week, data):
     
 #%% Feature extraction
 
+def get_n_calls_prev_weeks(day,df_train):
+    """
+    For date + time "day", returns the number of calls at week -1, week -2, and week -3
+    """
+    day_minus_7 = day - pd.to_timedelta(timedelta(weeks=1))
+    day_minus_14 = day - pd.to_timedelta(timedelta(weeks=2))
+    day_minus_21 = day - pd.to_timedelta(timedelta(weeks=3))
+    dates = []
+    dates.append(day_minus_7)
+    dates.append(day_minus_14)
+    dates.append(day_minus_21)
+    
+    preds = []
+    for date in dates:
+        try:
+            #print(df_train["DATE"][-3:])
+            #print(date)
+            pred = df_train.loc[(df_train["DATE"] == date)]["CSPL_RECEIVED_CALLS"][0]
+        except IndexError:
+            pred = 0
+        preds.append(pred)
+    return preds
+    
+ 
+    
 def fill_inexistant_features(train_features,test_features):
     """
     For each week we need to predict, there is only only one month (or two), so 
@@ -174,8 +199,11 @@ def fill_holidays_before(table, holiday_column='DAY_OFF_BEFORE', date_column='DA
     return table    
 
     
-def extract_features(input_data):
+def extract_features_train(input_data):
     data = input_data.copy()
+    #print("***")
+    #get_n_calls_prev_weeks(data['DATE'][0], input_data)
+    #temp = data['DATE'].index.map(lambda date: get_n_calls_prev_weeks(date,input_data))
     data['YEAR'] = data.DATE.apply(lambda x: x.year) 
     data['MONTH'] = data.DATE.apply(lambda x: x.month) 
     #data_dummy_month = pd.get_dummies(data['MONTH'],prefix='MONTH')
@@ -199,6 +227,31 @@ def extract_features(input_data):
     data_with_dummies = data.join(data_dummy_weekday)
     return data_with_dummies
 
+def extract_features_test(input_data,input_train):
+    data = input_data.copy()
+    
+    data['YEAR'] = data.DATE.apply(lambda x: x.year) 
+    data['MONTH'] = data.DATE.apply(lambda x: x.month) 
+    #data_dummy_month = pd.get_dummies(data['MONTH'],prefix='MONTH')
+    data['DAY'] = data.DATE.apply(lambda x: x.day) 
+    data['WEEK_DAY'] = data.DATE.apply(lambda x: x.weekday()) 
+    data_dummy_weekday = pd.get_dummies(data['WEEK_DAY'], prefix='WEEKDAY', drop_first=True)
+    data['HOUR'] = data.DATE.apply(lambda x: x.hour) 
+    data['MINUTE'] = data.DATE.apply(lambda x: x.minute * 5./300.) # .minute gives 0 or 30,
+    #and to have continuous times, we want 30 to becomes half an hour, ie. 0.5
+    #data['TIME'] = data['HOUR'] + data['MINUTE']
+    data['MINUTE'] = data['MINUTE'].apply(lambda x: x/0.5) # we still want to keep the indication of half hours: if was 0.5, becomes 1; if was 0, stays 0
+    data = fill_holidays(data)
+    data = fill_holidays_next(data)
+    data = fill_holidays_before(data)
+    #data.drop('HOUR', axis=1, inplace=True)
+    #data.drop('MINUTE', axis=1, inplace=True)
+    #data.drop('MONTH', axis=1, inplace=True)
+    data.drop('WEEK_DAY', axis=1, inplace=True)
+    data.drop('DATE', axis=1, inplace=True)
+    #data_with_dummies = data.join(data_dummy_month).join(data_dummy_weekday)
+    data_with_dummies = data.join(data_dummy_weekday)
+    return data_with_dummies
     
 def extract_labels(input_data):
     return input_data.CSPL_RECEIVED_CALLS
@@ -206,7 +259,7 @@ def extract_labels(input_data):
 ## example    
 data_train_ex = no_duplicates['Japon'].copy()
 data_test_ex = sub_data[sub_data.ASS_ASSIGNMENT == 'Japon'].copy()
-train_features = extract_features(data_train_ex)
+train_features = extract_features_train(data_train_ex)
 train_labels = extract_labels(data_train_ex)
 #test_features = extract_features(data_test_ex)
 print(train_features.columns)

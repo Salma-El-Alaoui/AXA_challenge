@@ -277,7 +277,7 @@ date_ex = sub_first_days[0]
 df_train_ex = no_duplicates[assignment_ex]
 create_date_only_column(df_train_ex)
 sub_dates_only = list(df_train_ex.DATE_ONLY.apply(lambda x: x).unique())
-get_evolution(date_ex,df_train_ex)
+get_daily_evolution(date_ex,df_train_ex)
    
 
 # %% Predict number of calls using only the number of calls at week W-1
