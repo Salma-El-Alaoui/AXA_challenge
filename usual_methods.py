@@ -146,6 +146,31 @@ def get_train_test(first_day_week, data):
     
 #%% Feature extraction
 
+def get_n_calls_prev_weeks(day,df_train):
+    """
+    For date + time "day", returns the number of calls at week -1, week -2, and week -3
+    """
+    day_minus_7 = day - pd.to_timedelta(timedelta(weeks=1))
+    day_minus_14 = day - pd.to_timedelta(timedelta(weeks=2))
+    day_minus_21 = day - pd.to_timedelta(timedelta(weeks=3))
+    dates = []
+    dates.append(day_minus_7)
+    dates.append(day_minus_14)
+    dates.append(day_minus_21)
+    
+    preds = []
+    for date in dates:
+        try:
+            #print(df_train["DATE"][-3:])
+            #print(date)
+            pred = df_train.loc[(df_train["DATE"] == date)]["CSPL_RECEIVED_CALLS"][0]
+        except IndexError:
+            pred = 0
+        preds.append(pred)
+    return preds
+    
+ 
+    
 def fill_inexistant_features(train_features,test_features):
     """
     For each week we need to predict, there is only only one month (or two), so 
@@ -196,6 +221,9 @@ def fill_holidays_before(table, holiday_column='DAY_OFF_BEFORE', date_column='DA
 
 def extract_features(input_data):
     data = input_data.copy()
+    #print("***")
+    #get_n_calls_prev_weeks(data['DATE'][0], input_data)
+    #temp = data['DATE'].index.map(lambda date: get_n_calls_prev_weeks(date,input_data))
     data['YEAR'] = data.DATE.apply(lambda x: x.year) 
     data['MONTH'] = data.DATE.apply(lambda x: x.month) 
     #data_dummy_month = pd.get_dummies(data['MONTH'],prefix='MONTH')
@@ -281,16 +309,15 @@ print(df_test.head(2))
 
 
 #%% Cross Validation
+
 def cross_validation():
     scores_val = dict()
     scores = dict()
-    
-    for assignment in sub_assignments[2:]:
+    surestimation = [1.5, 1.6, 1.7, 1.8, 1.9, 2.]        
+    for assignment in sub_assignments:
         print("***********")
         print("\n Model for assignment " + str(assignment))
         df_assign = no_duplicates[assignment]
-        surestimation = [1.5, 1.6, 1.7, 1.8, 1.9, 2.]
-        
         scores_val[assignment] = []
         scores[assignment] = []
         dates_to_overwrite = []
