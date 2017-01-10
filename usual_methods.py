@@ -440,68 +440,6 @@ for assignment in sub_assignments:
                  
 print(df_test['prediction'])       
 
-# %% Simple mean Predictor
-# Still in progress, don't run 
-NUMBER_DAYS = 3*365/(2*7)
-
-scores = dict()
-for assignment in sub_assignments:
-    print("***********")
-    print("\n Model for assignment " + str(assignment))
-    df_assign = no_duplicates[assignment]
-    
-    
-    scores[assignment] = []
-    for i, first_day in enumerate(sub_first_days):
-        print("** Week starting with " +  str(first_day))
-        ## Building train and test sets
-        first_day = datetime.datetime.combine(first_day, datetime.time(00, 00, 00)) 
-        train_set, test_set = get_train_test(first_day, df_assign) 
-        
-        #local test
-        first_day_test = first_day + datetime.timedelta(days=7, hours=0, minutes=0)
-        train_set_loc, test_set_loc = get_train_test(first_day_test, df_assign)
-        
-        ## Extracting features and labels
-        train_features = extract_features(train_set)
-        test_features = extract_features(test_set)
-        test_features = fill_inexistant_features(train_features,test_features)
-        train_features.sort(axis=1, ascending=True, inplace=True)
-        test_features.sort(axis=1, ascending=True, inplace=True)
-        train_labels = extract_labels(train_set)
-        
-        train_features_loc = extract_features(train_set_loc)
-        test_features_loc = extract_features(test_set_loc)
-        test_features_loc = fill_inexistant_features(train_features_loc,test_features_loc)
-        train_features_loc.sort(axis=1, ascending=True, inplace=True)
-        test_features_loc.sort(axis=1, ascending=True, inplace=True)
-        train_labels_loc = extract_labels_score(train_set_loc)
-        test_labels_loc = extract_labels_score(test_set_loc)
-        
-        ## Model
-        means_df = pd.DataFrame({"mean":train_features.groupby(['WEEK_DAY', 'TIME'])['CSPL_RECEIVED_CALLS'].sum()}).reset_index()
-        means_df['mean'] = means_df['mean'] / NUMBER_DAYS
-        df_merge= pd.merge(test_features, means_df,on=['WEEK_DAY', 'TIME'], how='inner')
-        df_merge['prediction'] = df_merge['mean']
-        df_merge_loc = pd.merge(test_features_loc, means_df,on=['WEEK_DAY', 'TIME'], how='inner')
-        df_merge_loc['prediction'] = df_merge_loc['mean']
-        print(df_merge)
-        score = compute_score(df_merge_loc['prediction'], test_labels_loc)
-
-        print("Score: ", first_day_test, score)
-        scores[assignment].append(score)
-        
-        ## Write predictions to dataframe 
-        # TODO !
-        for date in enumerate(test_features.index):
-            df_test.loc[(df_test["DATE_FORMAT"] == date) & (df_test["ASS_ASSIGNMENT"] == assignment) , "prediction"] = 0
-            df_assign.loc[date, 'CSPL_RECEIVED_CALLS'] = 0
-        
-    #print("Mean score for " + assignment, np.mean(scores[assignment]))
-                 
-print(df_test['prediction'])       
-
-
 
 # %% Telephonie
 
