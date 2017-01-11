@@ -7,7 +7,7 @@ Created on Sat Dec 24 13:28:42 2016
 
 In this file, we try to predict CSPL_RECEIVED_CALLS using basic date and holiday 
 information, and usual machine learning techniques that best apply to time series
-analysis
+analysis, xith a parallelized training task 
 
 """
 
@@ -380,122 +380,117 @@ def cross_validation():
         print("Best Coeff for " + assignment, min(scores_val[assignment], key=lambda v: v[1]))
         return scores_val
                       
-#%% GBM
+# %% GBM with parallel training
+
+from threading import Thread, Lock
+from queue import Queue
+
+# Maxmimum number of threads working in parallel
+kMaxWorkers = 8
 
 scores = dict()
 for assignment in sub_assignments:
     print("***********")
     print("\n Model for assignment " + str(assignment))
     df_assign = no_duplicates[assignment]
-    
+
+    df_lock = Lock()
+    task_queue = Queue()
+
+    class TrainRunner(Thread):
+        def __init__(self):
+            super().__init__()
+
+        def run(self):
+            while True:
+                # Retrieve task
+                first_day = task_queue.get()
+                if first_day is None:
+                    # This is a sign that we should stop working.
+                    break
+
+                print("** Week starting with " +  str(first_day))
+                ## Building train and test sets
+                first_day = datetime.datetime.combine(first_day, datetime.time(00, 00, 00))
+                train_set, test_set = get_train_test(first_day, df_assign)
+
+                #local test
+                first_day_test = first_day + datetime.timedelta(days=7, hours=0, minutes=0)
+                train_set_loc, test_set_loc = get_train_test(first_day_test, df_assign)
+
+                ## Extracting features and labels
+                train_features = extract_features(train_set)
+                test_features = extract_features(test_set)
+                train_features.drop('CSPL_RECEIVED_CALLS', axis=1, inplace=True)
+                test_features.drop('CSPL_RECEIVED_CALLS', axis=1, inplace=True)
+                test_features = fill_inexistant_features(train_features,test_features)
+                train_features.sort(axis=1, ascending=True, inplace=True)
+                test_features.sort(axis=1, ascending=True, inplace=True)
+                train_labels = extract_labels(train_set)
+
+                train_features_loc = extract_features(train_set_loc)
+                test_features_loc = extract_features(test_set_loc)
+                train_features_loc.drop('CSPL_RECEIVED_CALLS', axis=1, inplace=True)
+                test_features_loc.drop('CSPL_RECEIVED_CALLS', axis=1, inplace=True)
+                test_features_loc = fill_inexistant_features(train_features_loc,test_features_loc)
+                train_features_loc.sort(axis=1, ascending=True, inplace=True)
+                test_features_loc.sort(axis=1, ascending=True, inplace=True)
+                train_labels_loc = extract_labels_score(train_set_loc, assignment)
+                test_labels_loc = extract_labels_score(test_set_loc, assignment)
+
+                regressor = GradientBoostingRegressor(n_estimators = 1500)
+                train_features_matrix = train_features.as_matrix()
+                train_labels_matrix = train_labels.as_matrix()
+                regressor.fit(train_features_matrix,train_labels_matrix)
+                ypred = regressor.predict(test_features.as_matrix())
+                y_pred_loc = regressor.predict(test_features_loc.as_matrix())
+                d = {'CSPL_RECEIVED_CALLS' : y_pred_loc}
+                y_pred_loc_df = pd.DataFrame(data=d, index=test_features_loc.index)
+                score = compute_score(test_labels_loc, extract_labels_score(y_pred_loc_df, assignment))
+
+                # Write sccores out and predictions to dataframe (critical section)
+                df_lock.acquire()
+                print("Score: ", first_day_test, score)
+                scores[assignment].append(score)
+
+                for i, date in enumerate(test_features.index):
+                    df_test.loc[(df_test["DATE_FORMAT"] == date) & (df_test["ASS_ASSIGNMENT"] == assignment) , "prediction"] = max(ypred[i], 0)
+                    df_assign.loc[date, 'CSPL_RECEIVED_CALLS'] = max(0, ypred[i])
+                df_lock.release()
+                # End critical section
+
+                # Mark task as done
+                task_queue.task_done()
+
+
     scores[assignment] = []
-    for i, first_day in enumerate(sub_first_days):
-        print("** Week starting with " +  str(first_day))
-        ## Building train and test sets
-        first_day = datetime.datetime.combine(first_day, datetime.time(00, 00, 00)) 
-        train_set, test_set = get_train_test(first_day, df_assign) 
-        
-        #local test
-        first_day_test = first_day + datetime.timedelta(days=7, hours=0, minutes=0)
-        train_set_loc, test_set_loc = get_train_test(first_day_test, df_assign)
-        
-        ## Extracting features and labels
-        train_features = extract_features(train_set)
-        test_features = extract_features(test_set)
-        train_features.drop('CSPL_RECEIVED_CALLS', axis=1, inplace=True)
-        test_features.drop('CSPL_RECEIVED_CALLS', axis=1, inplace=True)
-        test_features = fill_inexistant_features(train_features,test_features)
-        train_features.sort(axis=1, ascending=True, inplace=True)
-        test_features.sort(axis=1, ascending=True, inplace=True)
-        train_labels = extract_labels(train_set)
-        
-        train_features_loc = extract_features(train_set_loc)
-        test_features_loc = extract_features(test_set_loc)
-        train_features_loc.drop('CSPL_RECEIVED_CALLS', axis=1, inplace=True)
-        test_features_loc.drop('CSPL_RECEIVED_CALLS', axis=1, inplace=True)
-        test_features_loc = fill_inexistant_features(train_features_loc,test_features_loc)
-        train_features_loc.sort(axis=1, ascending=True, inplace=True)
-        test_features_loc.sort(axis=1, ascending=True, inplace=True)
-        train_labels_loc = extract_labels_score(train_set_loc, assignment)
-        test_labels_loc = extract_labels_score(test_set_loc, assignment)
-    
-        regressor = GradientBoostingRegressor(n_estimators = 1500)
-        train_features_matrix = train_features.as_matrix()
-        train_labels_matrix = train_labels.as_matrix()
-        regressor.fit(train_features_matrix,train_labels_matrix)
-        ypred = regressor.predict(test_features.as_matrix())
-        y_pred_loc = regressor.predict(test_features_loc.as_matrix())
-        d = {'CSPL_RECEIVED_CALLS' : y_pred_loc}
-        y_pred_loc_df = pd.DataFrame(data=d, index=test_features_loc.index)
-        score = compute_score(test_labels_loc, extract_labels_score(y_pred_loc_df, assignment))
-    
-        print("Score: ", first_day_test, score)
-        scores[assignment].append(score)
-        
-        ## Write predictions to dataframe        
-        for i, date in enumerate(test_features.index):
-            df_test.loc[(df_test["DATE_FORMAT"] == date) & (df_test["ASS_ASSIGNMENT"] == assignment) , "prediction"] = max(ypred[i], 0)
-            df_assign.loc[date, 'CSPL_RECEIVED_CALLS'] = max(0, ypred[i])
-        
+
+    # Create the tasks
+    for _, first_day in enumerate(sub_first_days):
+        task_queue.put(first_day)
+    print(str(task_queue.qsize()) + " tasks created.")
+
+    # Create the workers, which will consume the tasks
+    workers = []
+    for _ in range(kMaxWorkers):
+        worker = TrainRunner()
+        worker.start()
+        workers.append(worker)
+    print(str(kMaxWorkers) + " workers created.")
+
+    # Wait for all tasks to finish
+    task_queue.join()
+
+    # Wind down workers
+    for _ in range(kMaxWorkers):
+        task_queue.put(None)
+    for w in workers:
+        w.join()
+
+    print("Workers joined successfully.")
     print("Mean score for " + assignment, np.mean(scores[assignment]))
-                 
-print(df_test['prediction'])       
 
-# %% A simple model prediction
-
-def get_smoothed_dummy_prediction(day,df_train):
-    day_minus_7 = day - pd.to_timedelta(timedelta(weeks=1))
-    day_minus_14 = day - pd.to_timedelta(timedelta(weeks=2))
-    day_minus_21 = day - pd.to_timedelta(timedelta(weeks=3))
-    day_minus_7_30_bef = day_minus_7 - pd.to_timedelta(timedelta(minutes=30))
-    day_minus_14_30_bef = day_minus_14 - pd.to_timedelta(timedelta(minutes=30))
-    day_minus_21_30_bef = day_minus_21 - pd.to_timedelta(timedelta(minutes=30))
-    day_minus_7_60_bef = day_minus_7 - pd.to_timedelta(timedelta(minutes=60))
-    day_minus_14_60_bef = day_minus_14 - pd.to_timedelta(timedelta(minutes=60))
-    day_minus_21_60_bef = day_minus_21 - pd.to_timedelta(timedelta(minutes=60))
-    day_minus_7_30_aft = day_minus_7 + pd.to_timedelta(timedelta(minutes=30))
-    day_minus_14_30_aft = day_minus_14 + pd.to_timedelta(timedelta(minutes=30))
-    day_minus_21_30_aft = day_minus_21 + pd.to_timedelta(timedelta(minutes=30))
-    day_minus_7_60_aft = day_minus_7 + pd.to_timedelta(timedelta(minutes=60))
-    day_minus_14_60_aft = day_minus_14 + pd.to_timedelta(timedelta(minutes=60))
-    day_minus_21_60_aft = day_minus_21 + pd.to_timedelta(timedelta(minutes=60))
-    dates = []
-    dates.append(day_minus_7)
-    dates.append(day_minus_14)
-    dates.append(day_minus_21)
-    dates.append(day_minus_7_30_bef)
-    dates.append(day_minus_14_30_bef)
-    dates.append(day_minus_21_30_bef)
-    dates.append(day_minus_7_30_aft)
-    dates.append(day_minus_14_30_aft)
-    dates.append(day_minus_21_30_aft)
-    dates.append(day_minus_7_60_bef)
-    dates.append(day_minus_14_60_bef)
-    dates.append(day_minus_21_60_bef)
-    dates.append(day_minus_7_60_aft)
-    dates.append(day_minus_14_60_aft)
-    dates.append(day_minus_21_60_aft)
-    
-    preds = []
-    for date in dates:
-        try:
-            pred = df_train.loc[(df_train["DATE"] == date)]["CSPL_RECEIVED_CALLS"][0]
-        except IndexError:
-            pred = 0
-        preds.append(pred)
-    return np.max(preds)
-
-#%% Replace the GBM prediction in Téléphonie by a simpler model predictions
-
-def apply_dummy(assignment="Téléphonie"):
-    sub_dates = list(sub_data.DATE_FORMAT.apply(lambda x: x).unique())
-    
-    for date in sub_dates:  
-        y = get_smoothed_dummy_prediction(date,no_duplicates[assignment]) #*2
-        df_test.loc[(df_test["DATE_FORMAT"] == date) & (df_test["ASS_ASSIGNMENT"] == assignment) , "prediction"] = y    
-                    
 #%% Write to submission file
-
 d_sub = df_test[['DATE', 'ASS_ASSIGNMENT', 'prediction']]
 d_sub.to_csv('data/test_submission_gbm.csv', sep="\t", encoding='utf-8', index=False)
 

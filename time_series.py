@@ -4,6 +4,9 @@
 Created on Mon Dec 19 19:24:21 2016
 
 @author: salma
+
+In this file, we try to predict CSPL_RECEIVED_CALLS using SARIMAX models
+
 """
 
 import pandas as pd
@@ -217,7 +220,6 @@ for assignment in [sub_assignments[0]]:
         model = SARIMAX(resampled, trend='n', order=(0,1,0), seasonal_order=(1,1,1,7))
         results = model.fit() 
         print(results.summary())
-        #print(mod.score())
         train_test = pd.concat((train_set,test_set))
         train_test['FORECAST'] = results.predict(start=n_train, end=n_train + n_test, dynamic=True)
         predictions[assign] = pd.concat((predictions[assign], train_test.ix[n_train:].FORECAST))
@@ -254,5 +256,3 @@ val_train_dfs = get_test_set(generate_random_date())
 
 # TODO : function for fancy scoring: score per assignment, and per day of the week/ month etc
         
-# %%
-
