@@ -440,6 +440,116 @@ for assignment in sub_assignments:
                  
 print(df_test['prediction'])       
 
+# %%
+
+# %% GBM with parallel training
+from threading import Thread, Lock
+from queue import Queue
+
+# Maxmimum number of threads working in parallel
+kMaxWorkers = 8
+
+scores = dict()
+for assignment in sub_assignments:
+    print("***********")
+    print("\n Model for assignment " + str(assignment))
+    df_assign = no_duplicates[assignment]
+
+    df_lock = Lock()
+    task_queue = Queue()
+
+    class TrainRunner(Thread):
+        def __init__(self):
+            super().__init__()
+
+        def run(self):
+            while True:
+                # Retrieve task
+                first_day = task_queue.get()
+                if first_day is None:
+                    # This is a sign that we should stop working.
+                    break
+
+                print("** Week starting with " +  str(first_day))
+                ## Building train and test sets
+                first_day = datetime.datetime.combine(first_day, datetime.time(00, 00, 00))
+                train_set, test_set = get_train_test(first_day, df_assign)
+
+                #local test
+                first_day_test = first_day + datetime.timedelta(days=7, hours=0, minutes=0)
+                train_set_loc, test_set_loc = get_train_test(first_day_test, df_assign)
+
+                ## Extracting features and labels
+                train_features = extract_features(train_set)
+                test_features = extract_features(test_set)
+                train_features.drop('CSPL_RECEIVED_CALLS', axis=1, inplace=True)
+                test_features.drop('CSPL_RECEIVED_CALLS', axis=1, inplace=True)
+                test_features = fill_inexistant_features(train_features,test_features)
+                train_features.sort(axis=1, ascending=True, inplace=True)
+                test_features.sort(axis=1, ascending=True, inplace=True)
+                train_labels = extract_labels(train_set)
+
+                train_features_loc = extract_features(train_set_loc)
+                test_features_loc = extract_features(test_set_loc)
+                train_features_loc.drop('CSPL_RECEIVED_CALLS', axis=1, inplace=True)
+                test_features_loc.drop('CSPL_RECEIVED_CALLS', axis=1, inplace=True)
+                test_features_loc = fill_inexistant_features(train_features_loc,test_features_loc)
+                train_features_loc.sort(axis=1, ascending=True, inplace=True)
+                test_features_loc.sort(axis=1, ascending=True, inplace=True)
+                train_labels_loc = extract_labels_score(train_set_loc, assignment)
+                test_labels_loc = extract_labels_score(test_set_loc, assignment)
+
+                regressor = GradientBoostingRegressor(n_estimators = 1500)
+                train_features_matrix = train_features.as_matrix()
+                train_labels_matrix = train_labels.as_matrix()
+                regressor.fit(train_features_matrix,train_labels_matrix)
+                ypred = regressor.predict(test_features.as_matrix())
+                y_pred_loc = regressor.predict(test_features_loc.as_matrix())
+                d = {'CSPL_RECEIVED_CALLS' : y_pred_loc}
+                y_pred_loc_df = pd.DataFrame(data=d, index=test_features_loc.index)
+                score = compute_score(test_labels_loc, extract_labels_score(y_pred_loc_df, assignment))
+
+                # Write sccores out and predictions to dataframe (critical section)
+                df_lock.acquire()
+                print("Score: ", first_day_test, score)
+                scores[assignment].append(score)
+
+                for i, date in enumerate(test_features.index):
+                    df_test.loc[(df_test["DATE_FORMAT"] == date) & (df_test["ASS_ASSIGNMENT"] == assignment) , "prediction"] = max(ypred[i], 0)
+                    df_assign.loc[date, 'CSPL_RECEIVED_CALLS'] = max(0, ypred[i])
+                df_lock.release()
+                # End critical section
+
+                # Mark task as done
+                task_queue.task_done()
+
+
+    scores[assignment] = []
+
+    # Create the tasks
+    for _, first_day in enumerate(sub_first_days):
+        task_queue.put(first_day)
+    print(str(task_queue.qsize()) + " tasks created.")
+
+    # Create the workers, which will consume the tasks
+    workers = []
+    for _ in range(kMaxWorkers):
+        worker = TrainRunner()
+        worker.start()
+        workers.append(worker)
+    print(str(kMaxWorkers) + " workers created.")
+
+    # Wait for all tasks to finish
+    task_queue.join()
+
+    # Wind down workers
+    for _ in range(kMaxWorkers):
+        task_queue.put(None)
+    for w in workers:
+        w.join()
+
+    print("Workers joined successfully.")
+    print("Mean score for " + assignment, np.mean(scores[assignment]))
 
 # %% Telephonie
 
@@ -499,5 +609,5 @@ d_sub.to_csv('data/test_submission_gbm_tel_2.csv', sep="\t", encoding='utf-8', i
 
 # %% write to submission file with over-estimation
 d_sub_2=d_sub.copy()
-d_sub_2['prediction'] = 2.5 * d_sub_2['prediction']
+d_sub_2['prediction'] = 2 * d_sub_2['prediction'] + 10
 d_sub_2.to_csv('data/test_submission_gbm_2.csv', sep="\t", encoding='utf-8', index=False)
