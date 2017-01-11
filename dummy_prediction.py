@@ -115,17 +115,7 @@ def get_previous_week_call_nb(day,df_train):
         pred = df_train.loc[(df_train["DATE"] == day_minus_7)]["CSPL_RECEIVED_CALLS"][0]
     except IndexError:
         pred = 0
-#            day_minus_14  = day - pd.to_timedelta(timedelta(weeks=2))
- #           previous_day = day_minus_14
-#            while True:
-#                try:
-#                    pred = df_train.loc[(df_train["DATE"] == day_minus_14)]["CSPL_RECEIVED_CALLS"][0]
-#                    break
-#                except IndexError:
-#                    print("rkeo")
-#                    pred = 0
-#                    print("fkzl")
-#                    break
+
     return previous_day, pred
     
 
@@ -142,21 +132,25 @@ print("Nb of calls received: " + str(res[1]))
 # %% Take max of number of calls at w-1, w-2, w-3 in a window of 1 hour
 
 def get_smoothed_dummy_prediction(day,df_train):
+    """
+    Returns max of number of calls at W-1, W-2, W-3, in a time window of an hour
+    and a half. Uncomment commented lines to have a time window of 2h30.
+    """
     day_minus_7 = day - pd.to_timedelta(timedelta(weeks=1))
     day_minus_14 = day - pd.to_timedelta(timedelta(weeks=2))
     day_minus_21 = day - pd.to_timedelta(timedelta(weeks=3))
     day_minus_7_30_bef = day_minus_7 - pd.to_timedelta(timedelta(minutes=30))
     day_minus_14_30_bef = day_minus_14 - pd.to_timedelta(timedelta(minutes=30))
     day_minus_21_30_bef = day_minus_21 - pd.to_timedelta(timedelta(minutes=30))
-    day_minus_7_60_bef = day_minus_7 - pd.to_timedelta(timedelta(minutes=60))
-    day_minus_14_60_bef = day_minus_14 - pd.to_timedelta(timedelta(minutes=60))
-    day_minus_21_60_bef = day_minus_21 - pd.to_timedelta(timedelta(minutes=60))
+#    day_minus_7_60_bef = day_minus_7 - pd.to_timedelta(timedelta(minutes=60))
+#    day_minus_14_60_bef = day_minus_14 - pd.to_timedelta(timedelta(minutes=60))
+#    day_minus_21_60_bef = day_minus_21 - pd.to_timedelta(timedelta(minutes=60))
     day_minus_7_30_aft = day_minus_7 + pd.to_timedelta(timedelta(minutes=30))
     day_minus_14_30_aft = day_minus_14 + pd.to_timedelta(timedelta(minutes=30))
     day_minus_21_30_aft = day_minus_21 + pd.to_timedelta(timedelta(minutes=30))
-    day_minus_7_60_aft = day_minus_7 + pd.to_timedelta(timedelta(minutes=60))
-    day_minus_14_60_aft = day_minus_14 + pd.to_timedelta(timedelta(minutes=60))
-    day_minus_21_60_aft = day_minus_21 + pd.to_timedelta(timedelta(minutes=60))
+#    day_minus_7_60_aft = day_minus_7 + pd.to_timedelta(timedelta(minutes=60))
+#    day_minus_14_60_aft = day_minus_14 + pd.to_timedelta(timedelta(minutes=60))
+#    day_minus_21_60_aft = day_minus_21 + pd.to_timedelta(timedelta(minutes=60))
     dates = []
     dates.append(day_minus_7)
     dates.append(day_minus_14)
@@ -167,12 +161,12 @@ def get_smoothed_dummy_prediction(day,df_train):
     dates.append(day_minus_7_30_aft)
     dates.append(day_minus_14_30_aft)
     dates.append(day_minus_21_30_aft)
-    dates.append(day_minus_7_60_bef)
-    dates.append(day_minus_14_60_bef)
-    dates.append(day_minus_21_60_bef)
-    dates.append(day_minus_7_60_aft)
-    dates.append(day_minus_14_60_aft)
-    dates.append(day_minus_21_60_aft)
+#    dates.append(day_minus_7_60_bef)
+#    dates.append(day_minus_14_60_bef)
+#    dates.append(day_minus_21_60_bef)
+#    dates.append(day_minus_7_60_aft)
+#    dates.append(day_minus_14_60_aft)
+#    dates.append(day_minus_21_60_aft)
     
     preds = []
     for date in dates:
@@ -187,15 +181,6 @@ assignment_ex = sub_assignments[0]
 date_ex = sub_first_days[0]
 date_ex = datetime.datetime.combine(date_ex, datetime.time(00, 00, 00))
 print(get_smoothed_dummy_prediction(date_ex,no_duplicates[assignment_ex]))
-# %% debug
-#bugged_date = date_ex + pd.to_timedelta(timedelta(weeks=5,days=1)) 
-#day_minus_7 = bugged_date - pd.to_timedelta(timedelta(weeks=1))
-#day_minus_14 = bugged_date - pd.to_timedelta(timedelta(weeks=2))
-#print(day_minus_7)
-#print(day_minus_14)
-#ass_bug = "CMS"
-#df_train = no_duplicates["CMS"]
-#print(df_train.loc[(df_train["DATE"] == day_minus_7)]["CSPL_RECEIVED_CALLS"][0])
 
 #%% dataframe for submission
 
@@ -237,7 +222,6 @@ number of calls at week -2. If one of those numbers is equal to 0, returns 0.
 """    
 def get_daily_evolution(day, df_train):
     dates = []
-    #print(day)
     day_minus_1_week = day - pd.to_timedelta(timedelta(weeks=1))
     day_minus_2_weeks = day - pd.to_timedelta(timedelta(weeks=2))
     day_minus_3_weeks = day - pd.to_timedelta(timedelta(weeks=3))
@@ -259,15 +243,12 @@ def get_daily_evolution(day, df_train):
     evolution_1 = 1.
     if (sum(n_calls) > 15):
         if (n_calls[0] != 0) & (n_calls[1] != 0):
-            #print("here")
             evolution_1 = float(n_calls[0]) / float(n_calls[1])
             evolution = evolution_1
             
         if (n_calls[1] != 0) & (n_calls[2] != 0):
-            #print("here")
             evolution = max([evolution_1,float(n_calls[1]) / float(n_calls[2])])
-            
-    #print(str(n_calls)+ " evol " + str(evolution))
+
     return evolution
         
 
@@ -282,28 +263,31 @@ get_daily_evolution(date_ex,df_train_ex)
 
 # %% Predict number of calls using only the number of calls at week W-1
 
-for assignment in sub_assignments:
-    print("*** assignment " + str(assignment))
-    df_train = no_duplicates[assignment]
-    for date in sub_dates:  
-        y = get_previous_week_call_nb(date,df_train)[1]
-        df_test.loc[(df_test["DATE_FORMAT"] == date) & (df_test["ASS_ASSIGNMENT"] == assignment) , "prediction"] = y
+# Uncomment below
+
+#for assignment in sub_assignments:
+#    print("*** assignment " + str(assignment))
+#    df_train = no_duplicates[assignment]
+#    for date in sub_dates:  
+#        y = get_previous_week_call_nb(date,df_train)[1]
+#        df_test.loc[(df_test["DATE_FORMAT"] == date) & (df_test["ASS_ASSIGNMENT"] == assignment) , "prediction"] = y
 
 #%% Predict a smoothed version (look at week -1, week -2, week -3, in a time window of half an hour before, half an hour after)
 
-for assignment in sub_assignments:
-    print("*** assignment " + str(assignment))
-    df_train = no_duplicates[assignment]
-    for date in sub_dates:  
-        y = get_smoothed_dummy_prediction(date,df_train)[1]
-        df_test.loc[(df_test["DATE_FORMAT"] == date) & (df_test["ASS_ASSIGNMENT"] == assignment) , "prediction"] = y
+# Uncomment below
+
+#for assignment in sub_assignments:
+#    print("*** assignment " + str(assignment))
+#    df_train = no_duplicates[assignment]
+#    for date in sub_dates:  
+#        y = get_smoothed_dummy_prediction(date,df_train)[1]
+#        df_test.loc[(df_test["DATE_FORMAT"] == date) & (df_test["ASS_ASSIGNMENT"] == assignment) , "prediction"] = y
 
                     
 #%% Predict a smoothed version (look at week -1, week -2, week -3, in a time window of half an hour before, half an hour after)
 # multiplication by daily_evolution
 
 for assignment in sub_assignments:  
-#for assignment in ["Téléphonie"]:  
     print("*** assignment " + str(assignment))
     df_train = no_duplicates[assignment]
     create_date_only_column(df_train)
@@ -333,6 +317,6 @@ d_sub.to_csv('data/test_submission_dummy_smoothed_max_evol_1.csv', sep="\t", enc
 
 # %% Write to sumbission file
 
-d_sub_2=d_sub.copy()
-d_sub_2['prediction'] = d_sub['prediction'] + np.sqrt(d_sub['prediction'] )
-d_sub_2.to_csv('data/test_submission_dummy_smoothed_max_evol_6.csv', sep="\t", encoding='utf-8', index=False)
+#d_sub_2=d_sub.copy()
+#d_sub_2['prediction'] = d_sub['prediction'] + np.sqrt(d_sub['prediction'] )
+#d_sub_2.to_csv('data/test_submission_dummy_smoothed_max_evol_6.csv', sep="\t", encoding='utf-8', index=False)
