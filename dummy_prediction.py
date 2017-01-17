@@ -298,7 +298,51 @@ for assignment in sub_assignments:
         evolution_rate = get_daily_evolution(date_only, df_train)
         y = get_smoothed_dummy_prediction(date,df_train)
         df_test.loc[(df_test["DATE_FORMAT"] == date) & (df_test["ASS_ASSIGNMENT"] == assignment) , "prediction"] = y*evolution_rate
+        
+#%%Scoring
 
+def get_train_test(first_day_week, data):
+    last_day_week = first_day_week + datetime.timedelta(days=6, hours=23, minutes=30)
+    test_set = data[first_day_week: last_day_week].copy()
+    # small fix 
+    test_set.loc[test_set.DATE.isnull(), 'DATE'] = test_set[test_set.DATE.isnull()].index
+    # the training set are all the dates prior to the the first date of the week
+    train_set = data[:first_day_week - datetime.timedelta(minutes=30)].copy()
+    train_set.loc[train_set.DATE.isnull(), 'DATE'] = train_set[train_set.DATE.isnull()].index
+    return (train_set, test_set)
+
+sub_dates_test = [pd.to_datetime(date)+timedelta(days=7, hours=0, minutes=0) for date in sub_dates]
+
+scores = dict()
+for assignment in sub_assignments:
+    print("***********")
+    print("\n Score for assignment " + str(assignment))
+    df_train = no_duplicates[assignment]
+    create_date_only_column(df_train)
+    count = 0
+    err = 0
+    err_sur = 0
+    for i, date in enumerate(sub_dates_test):
+        date_only = pd.to_datetime(date).date()
+        evolution_rate = get_daily_evolution(date_only, df_train)
+        y = get_smoothed_dummy_prediction(date, df_train)
+        y_sur = 1.3 * y
+        try:        
+            y_true = df_train.loc[date, 'CSPL_RECEIVED_CALLS']
+        except KeyError:
+            continue
+        if np.isnan(y_true):
+            continue
+        else:
+            err += np.exp(0.1 * (y_true - y)) - 0.1 * (y_true - y) - 1
+            err_sur += np.exp(0.1 * (y_true - y_sur)) - 0.1 * (y_true - y_sur) - 1
+            count += 1
+    score = err/count
+    score_sur = err_sur/count
+    print(score, score_sur)
+    scores[assignment] = (score, score_sur)
+
+        
 # %% Write to sumbission file
 
 #d_sub = df_test[['DATE', 'ASS_ASSIGNMENT', 'prediction']]
